@@ -17,9 +17,8 @@ import java.util.Locale
 
 class VoiceAssistantService : Service() {
     private var recognizer: SpeechRecognizer? = null
-    private var waitingForCommand = false
     private var language = "en-US"
-    private var statusText = "Waiting for Hey Assistant"
+    private var statusText = "Listening for commands"
     private var serviceStopping = false
 
     override fun onCreate() {
@@ -65,7 +64,7 @@ class VoiceAssistantService : Service() {
         recognizer = if (Build.VERSION.SDK_INT >= 31) SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
                     else SpeechRecognizer.createSpeechRecognizer(this)
         recognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { updateNotification(if (waitingForCommand) "Listening for a command…" else "Waiting for Hey Assistant") }
+            override fun onReadyForSpeech(params: Bundle?) { updateNotification("Listening for commands…") }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -76,15 +75,7 @@ class VoiceAssistantService : Service() {
                 processRecognizedText(text)
                 if (!serviceStopping) restartListening()
             }
-            override fun onPartialResults(partialResults: Bundle?) {
-                val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
-                if (!waitingForCommand && containsWakePhrase(text)) {
-                    waitingForCommand = true
-                    updateNotification("Wake phrase detected — say a command")
-                    try { recognizer?.cancel() } catch (_: Exception) { }
-                    restartListening()
-                }
-            }
+            override fun onPartialResults(partialResults: Bundle?) { }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
         restartListening()
@@ -92,18 +83,9 @@ class VoiceAssistantService : Service() {
 
     private fun processRecognizedText(text: String) {
         if (text.isBlank()) return
-        if (containsWakePhrase(text)) {
-            if (!waitingForCommand) {
-                waitingForCommand = true
-                updateNotification("Wake phrase detected — say a command")
-            }
-            return
-        }
-        if (!waitingForCommand) return
         val normalized = text.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
         if (normalized.contains("stop assistant")) {
             serviceStopping = true
-            waitingForCommand = false
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).putBoolean("service_active", false).apply()
             updateNotification("Assistant stopped")
             stopListening()
@@ -125,11 +107,7 @@ class VoiceAssistantService : Service() {
         } else {
             executeAction(action)
         }
-        waitingForCommand = false
     }
-
-    private fun containsWakePhrase(text: String): Boolean =
-        text.contains("hey assistant")
 
     private enum class MediaAction { PLAY, STOP, NEXT, PREVIOUS, VOLUME_UP, VOLUME_DOWN }
 
