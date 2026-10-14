@@ -25,6 +25,7 @@ class VoiceAssistantService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra(EXTRA_LANGUAGE)?.let { language = it }
         when (intent?.action) {
             ACTION_STOP -> { stopListening(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY }
             ACTION_START -> {
@@ -145,6 +146,7 @@ class VoiceAssistantService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        const val EXTRA_LANGUAGE = "recognition_language"
         const val ACTION_START = "com.ybapps.heyassistant.START"
         const val ACTION_STOP = "com.ybapps.heyassistant.STOP"
         private const val CHANNEL_ID = "voice_assistant"
