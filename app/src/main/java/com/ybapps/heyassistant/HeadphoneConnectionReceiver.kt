@@ -24,6 +24,7 @@ class HeadphoneConnectionReceiver : BroadcastReceiver() {
             intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED) == BluetoothProfile.STATE_CONNECTED
         }
         val prefs = context.getSharedPreferences(VoiceAssistantService.PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("headphones_connected", connected).apply()
         if (!prefs.getBoolean(VoiceAssistantService.KEY_AUTO_START, false)) return
 
         if (!connected) {
