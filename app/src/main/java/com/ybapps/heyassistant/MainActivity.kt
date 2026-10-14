@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.getValue
@@ -45,7 +44,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             var enabled by remember { mutableStateOf(false) }
-            var english by remember { mutableStateOf(false) }
             MaterialTheme(colorScheme = darkColorScheme(
                 primary = Color(0xFF54E0C1),
                 background = Color(0xFF0A0E13),
@@ -66,22 +64,19 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Text(if (enabled) "העוזר פעיל" else "העוזר מוכן", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(6.dp))
-                            Text("מילת הפעלה: ״היי עוזר״ / “Hey Assistant”", color = Color(0xFFB9C7D6), fontSize = 13.sp)
+                            Text("Wake phrase: Hey Assistant", color = Color(0xFFB9C7D6), fontSize = 13.sp)
                             Spacer(Modifier.height(14.dp))
                             Text("הפקודות הקבועות", fontWeight = FontWeight.Bold, color = Color(0xFF54E0C1))
                             Spacer(Modifier.height(8.dp))
-                            Text("Play Music  •  נגן מוזיקה")
-                            Text("Stop Music  •  עצור מוזיקה")
-                            Text("Next Song  •  השיר הבא")
-                            Text("Previous Song  •  השיר הקודם")
-                            Text("Volume Up  •  הגבר קול")
-                            Text("Volume Down  •  הנמך קול")
+                            Text("Play Music")
+                            Text("Stop Music")
+                            Text("Next Song")
+                            Text("Previous Song")
+                            Text("Volume Up")
+                            Text("Volume Down")
+                            Text("Stop Assistant")
                             Spacer(Modifier.height(14.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("פקודות באנגלית", modifier = Modifier.weight(1f))
-                                Switch(checked = english, onCheckedChange = { english = it })
-                            }
-                            Text(if (english) "שפת האזנה: English (US)" else "שפת האזנה: עברית", color = Color(0xFF8D9BAA), fontSize = 13.sp)
+                            Text("Speech recognition: English (US), on-device", color = Color(0xFF8D9BAA), fontSize = 13.sp)
                             Spacer(Modifier.height(16.dp))
                             Button(
                                 modifier = Modifier.fillMaxWidth(),
@@ -94,7 +89,7 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         val intent = Intent(this@MainActivity, VoiceAssistantService::class.java)
                                         intent.action = if (enabled) VoiceAssistantService.ACTION_STOP else VoiceAssistantService.ACTION_START
-                                        intent.putExtra(VoiceAssistantService.EXTRA_LANGUAGE, if (english) "en-US" else "he-IL")
+                                        intent.putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
                                         if (!enabled) ContextCompat.startForegroundService(this@MainActivity, intent) else startService(intent)
                                         enabled = !enabled
                                     }
