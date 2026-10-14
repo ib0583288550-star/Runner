@@ -65,9 +65,9 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth().background(Color(0xFF151D26), RoundedCornerShape(24.dp)).padding(18.dp),
                             horizontalAlignment = Alignment.Start
                         ) {
-                            Text(if (enabled) "הפעלה אוטומטית פעילה" else "העוזר מוכן", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (enabled) "ההאזנה מופעלת" else "העוזר מוכן", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(6.dp))
-                            Text("Wake phrase: Hey Assistant", color = Color(0xFFB9C7D6), fontSize = 13.sp)
+                            Text("Continuous listening: no wake phrase needed", color = Color(0xFFB9C7D6), fontSize = 13.sp)
                             Spacer(Modifier.height(14.dp))
                             Text("הפקודות הקבועות", fontWeight = FontWeight.Bold, color = Color(0xFF54E0C1))
                             Spacer(Modifier.height(8.dp))
@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
                             Text("Volume Down")
                             Text("Stop Assistant")
                             Spacer(Modifier.height(14.dp))
-                            Text("חבר אוזניות: ההאזנה תתחיל אוטומטית. אמור Hey Assistant ואז את הפקודה.", color = Color(0xFF8D9BAA), fontSize = 13.sp)
+                            Text("חבר אוזניות, פתח את האפליקציה ולחץ הפעלה פעם אחת. כשההאזנה פעילה אמור ישירות את הפקודה באנגלית.", color = Color(0xFF8D9BAA), fontSize = 13.sp)
                             Spacer(Modifier.height(16.dp))
                             Button(
                                 modifier = Modifier.fillMaxWidth(),
@@ -103,14 +103,19 @@ class MainActivity : ComponentActivity() {
                                             enabled = false
                                         } else {
                                             prefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
+                                            val startIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply {
+                                                action = VoiceAssistantService.ACTION_START
+                                                putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
+                                            }
+                                            ContextCompat.startForegroundService(this@MainActivity, startIntent)
                                             enabled = true
                                         }
                                     }
                                 }
-                            ) { Text(if (enabled) "בטל הפעלה אוטומטית" else "הפעל הפעלה אוטומטית") }
+                            ) { Text(if (enabled) "כבה את העוזר" else "הפעל האזנה רציפה") }
                         }
                         Spacer(Modifier.height(12.dp))
-                        Text("זיהוי קולי מקומי ופעולה ברקע נמצאים בפיתוח ובבדיקה.", color = Color(0xFF718096), fontSize = 12.sp)
+                        Text("הפקודות באנגלית. נדרשת בדיקה במכשיר כדי לאשר פעולה רציפה ברקע.", color = Color(0xFF718096), fontSize = 12.sp)
                     }
                 }
             }
