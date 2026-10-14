@@ -11,7 +11,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,14 +38,24 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
+    private var refreshStatus by mutableStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        refreshStatus++
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            val refresh = refreshStatus
             var enabled by remember { mutableStateOf(
                 getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
                     .getBoolean(VoiceAssistantService.KEY_AUTO_START, false)
             ) }
+            val prefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+            val headphonesConnected = prefs.getBoolean("headphones_connected", false)
+            val serviceActive = prefs.getBoolean("service_active", false)
             MaterialTheme(colorScheme = darkColorScheme(
                 primary = Color(0xFF54E0C1),
                 background = Color(0xFF0A0E13),
@@ -65,57 +74,56 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth().background(Color(0xFF151D26), RoundedCornerShape(24.dp)).padding(18.dp),
                             horizontalAlignment = Alignment.Start
                         ) {
-                            Text(if (enabled) "ההאזנה מופעלת" else "העוזר מוכן", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (headphonesConnected) "● אוזניות מחוברות" else "● אוזניות לא מחוברות", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (headphonesConnected) Color(0xFF54E0C1) else Color(0xFFFF7B86))
+                            Spacer(Modifier.height(8.dp))
+                            Text(if (serviceActive) "סטטוס העוזר: פעיל ומאזין" else "סטטוס העוזר: לא פעיל", fontSize = 15.sp, color = if (serviceActive) Color(0xFF54E0C1) else Color(0xFFB9C7D6))
+                            Spacer(Modifier.height(12.dp))
+                            Text(if (enabled) "ההפעלה האוטומטית מופעלת" else "העוזר מוכן", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(6.dp))
-                            Text("Continuous listening: no wake phrase needed", color = Color(0xFFB9C7D6), fontSize = 13.sp)
+                            Text("כשההאזנה פעילה, אין צורך לומר מילת הפעלה לפני כל פקודה.", color = Color(0xFFB9C7D6), fontSize = 13.sp)
                             Spacer(Modifier.height(14.dp))
                             Text("הפקודות הקבועות", fontWeight = FontWeight.Bold, color = Color(0xFF54E0C1))
                             Spacer(Modifier.height(8.dp))
-                            Text("Play Music")
-                            Text("Stop Music")
-                            Text("Next Song")
-                            Text("Previous Song")
-                            Text("Volume Up")
-                            Text("Volume Down")
-                            Text("Stop Assistant")
+                            Text("נגן מוזיקה  ·  Play Music")
+                            Text("עצור מוזיקה  ·  Stop Music")
+                            Text("השיר הבא  ·  Next Song")
+                            Text("השיר הקודם  ·  Previous Song")
+                            Text("הגבר קול  ·  Volume Up")
+                            Text("הנמך קול  ·  Volume Down")
+                            Text("עצור את העוזר  ·  Stop Assistant")
                             Spacer(Modifier.height(14.dp))
-                            Text("חבר אוזניות, פתח את האפליקציה ולחץ הפעלה פעם אחת. כשההאזנה פעילה אמור ישירות את הפקודה באנגלית.", color = Color(0xFF8D9BAA), fontSize = 13.sp)
+                            Text("חבר אוזניות והפעל את ההאזנה. אפשר לומר את הפקודות באנגלית; לזיהוי בעברית נדרשת תמיכה של שירות הזיהוי במכשיר.", color = Color(0xFF8D9BAA), fontSize = 13.sp)
                             Spacer(Modifier.height(16.dp))
-                            Button(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = {
-                                    val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
-                                    if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                    if (Build.VERSION.SDK_INT >= 31) permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-                                    val missing = permissions.filter { ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED }
-                                    if (missing.isNotEmpty()) {
-                                        permissionLauncher.launch(missing.toTypedArray())
-                                    } else {
-                                        val prefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
-                                        if (enabled) {
-                                            prefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, false).apply()
-                                            if (prefs.getBoolean("service_active", false)) {
-                                                val stopIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply {
-                                                    action = VoiceAssistantService.ACTION_STOP
-                                                }
-                                                startService(stopIntent)
-                                            }
-                                            enabled = false
-                                        } else {
-                                            prefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
-                                            val startIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply {
-                                                action = VoiceAssistantService.ACTION_START
-                                                putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
-                                            }
-                                            ContextCompat.startForegroundService(this@MainActivity, startIntent)
-                                            enabled = true
+                            Button(modifier = Modifier.fillMaxWidth(), onClick = {
+                                val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                                if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                if (Build.VERSION.SDK_INT >= 31) permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+                                val missing = permissions.filter { ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED }
+                                if (missing.isNotEmpty()) {
+                                    permissionLauncher.launch(missing.toTypedArray())
+                                } else {
+                                    val currentPrefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+                                    if (enabled) {
+                                        currentPrefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, false).apply()
+                                        if (currentPrefs.getBoolean("service_active", false)) {
+                                            val stopIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply { action = VoiceAssistantService.ACTION_STOP }
+                                            startService(stopIntent)
                                         }
+                                        enabled = false
+                                    } else {
+                                        currentPrefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
+                                        val startIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply {
+                                            action = VoiceAssistantService.ACTION_START
+                                            putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
+                                        }
+                                        ContextCompat.startForegroundService(this@MainActivity, startIntent)
+                                        enabled = true
                                     }
                                 }
-                            ) { Text(if (enabled) "כבה את העוזר" else "הפעל האזנה רציפה") }
+                            }) { Text(if (enabled) "כבה את העוזר" else "הפעל האזנה רציפה") }
                         }
                         Spacer(Modifier.height(12.dp))
-                        Text("הפקודות באנגלית. נדרשת בדיקה במכשיר כדי לאשר פעולה רציפה ברקע.", color = Color(0xFF718096), fontSize = 12.sp)
+                        Text("מצב החיבור מתעדכן כשאירוע חיבור או ניתוק מתקבל. יש לבדוק את ההתנהגות בפועל במכשיר.", color = Color(0xFF718096), fontSize = 12.sp)
                     }
                 }
             }
