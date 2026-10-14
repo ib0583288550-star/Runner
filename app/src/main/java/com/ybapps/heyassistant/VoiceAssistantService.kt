@@ -17,6 +17,7 @@ class VoiceAssistantService : Service() {
     private var recognizer: SpeechRecognizer? = null
     private var waitingForCommand = false
     private var language = "he-IL"
+    private var statusText = "ממתין ל״היי עוזר״"
 
     override fun onCreate() {
         super.onCreate()
@@ -128,17 +129,16 @@ class VoiceAssistantService : Service() {
     private fun buildNotification(): Notification {
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
         return builder.setContentTitle("היי עוזר")
-            .setContentText("ממתין ל״היי עוזר״")
+            .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
             .build()
     }
 
     private fun updateNotification(text: String) {
+        statusText = text.take(120)
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification().also {
-            // Keep the notification stable; the detailed status is visible in the app in a later iteration.
-        })
+        manager.notify(NOTIFICATION_ID, buildNotification())
     }
 
     override fun onDestroy() { stopListening(); super.onDestroy() }
