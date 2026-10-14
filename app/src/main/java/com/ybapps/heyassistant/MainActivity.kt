@@ -53,29 +53,36 @@ class MainActivity : ComponentActivity() {
             )) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0E13)) {
                     Column(
-                        modifier = Modifier.fillMaxSize().padding(24.dp),
+                        modifier = Modifier.fillMaxSize().padding(20.dp),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text("היי עוזר", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color(0xFF54E0C1))
-                        Text("עוזר קולי • yb apps", color = Color.LightGray, fontSize = 14.sp)
-                        Spacer(Modifier.height(28.dp))
+                        Text("פקודות מוזיקה קוליות • yb apps", color = Color.LightGray, fontSize = 14.sp)
+                        Spacer(Modifier.height(22.dp))
                         Column(
-                            modifier = Modifier.fillMaxWidth().background(Color(0xFF151D26), RoundedCornerShape(24.dp)).padding(20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier.fillMaxWidth().background(Color(0xFF151D26), RoundedCornerShape(24.dp)).padding(18.dp),
+                            horizontalAlignment = Alignment.Start
                         ) {
-                            Text(if (enabled) "השירות הופעל" else "מוכן להפעלה", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(8.dp))
-                            Text("מילת הפעלה: ״היי עוזר״", color = Color(0xFFB9C7D6))
+                            Text(if (enabled) "העוזר פעיל" else "העוזר מוכן", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(6.dp))
-                            Text("האזנה ברקע דורשת הרשאת מיקרופון והתראה קבועה.", color = Color(0xFF8D9BAA), fontSize = 13.sp)
-                            Spacer(Modifier.height(18.dp))
+                            Text("מילת הפעלה: ״היי עוזר״ / “Hey Assistant”", color = Color(0xFFB9C7D6), fontSize = 13.sp)
+                            Spacer(Modifier.height(14.dp))
+                            Text("הפקודות הקבועות", fontWeight = FontWeight.Bold, color = Color(0xFF54E0C1))
+                            Spacer(Modifier.height(8.dp))
+                            Text("Play Music  •  נגן מוזיקה")
+                            Text("Stop Music  •  עצור מוזיקה")
+                            Text("Next Song  •  השיר הבא")
+                            Text("Previous Song  •  השיר הקודם")
+                            Text("Volume Up  •  הגבר קול")
+                            Text("Volume Down  •  הנמך קול")
+                            Spacer(Modifier.height(14.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("פקודות באנגלית", modifier = Modifier.weight(1f))
                                 Switch(checked = english, onCheckedChange = { english = it })
                             }
-                            Text(if (english) "שפת הזיהוי: English (US)" else "שפת הזיהוי: עברית (ישראל)", color = Color(0xFF8D9BAA), fontSize = 13.sp)
-                            Spacer(Modifier.height(18.dp))
+                            Text(if (english) "שפת האזנה: English (US)" else "שפת האזנה: עברית", color = Color(0xFF8D9BAA), fontSize = 13.sp)
+                            Spacer(Modifier.height(16.dp))
                             Button(
                                 modifier = Modifier.fillMaxWidth(),
                                 onClick = {
@@ -94,8 +101,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             ) { Text(if (enabled) "עצור האזנה" else "הפעל עוזר") }
                         }
-                        Spacer(Modifier.height(18.dp))
-                        Text("אב־טיפוס 0.1 • זיהוי אופליין תלוי בתמיכת שירות הדיבור במכשיר", color = Color(0xFF718096), fontSize = 12.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Text("זיהוי קולי מקומי ופעולה ברקע נמצאים בפיתוח ובבדיקה.", color = Color(0xFF718096), fontSize = 12.sp)
                     }
                 }
             }
