@@ -33,7 +33,7 @@ class VoiceAssistantService : Service() {
             ACTION_STOP, ACTION_HEADPHONES_DISCONNECTED -> {
                 serviceStopping = true
                 val edit = getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("service_active", false)
-                if (intent.action == ACTION_STOP) edit.putBoolean(KEY_AUTO_START, false)
+                if (intent?.action == ACTION_STOP) edit.putBoolean(KEY_AUTO_START, false)
                 edit.apply()
                 stopListening()
                 stopForeground(STOP_FOREGROUND_REMOVE)
