@@ -20,6 +20,7 @@ class VoiceAssistantService : Service() {
     private var waitingForCommand = false
     private var language = "en-US"
     private var statusText = "Waiting for Hey Assistant"
+    private var serviceStopping = false
 
     override fun onCreate() {
         super.onCreate()
@@ -30,12 +31,16 @@ class VoiceAssistantService : Service() {
         intent?.getStringExtra(EXTRA_LANGUAGE)?.let { language = it }
         when (intent?.action) {
             ACTION_STOP -> {
+                serviceStopping = true
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).apply()
                 stopListening()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
             ACTION_START -> {
+                serviceStopping = false
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, true).apply()
                 startForeground(NOTIFICATION_ID, buildNotification())
                 startListening()
             }
@@ -63,11 +68,11 @@ class VoiceAssistantService : Service() {
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
-            override fun onError(error: Int) { restartListening() }
+            override fun onError(error: Int) { if (!serviceStopping) restartListening() }
             override fun onResults(results: Bundle?) {
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
                 processRecognizedText(text)
-                restartListening()
+                if (!serviceStopping) restartListening()
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
@@ -91,6 +96,16 @@ class VoiceAssistantService : Service() {
         }
         if (!waitingForCommand || text.isBlank()) return
         val normalized = text.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
+        if (normalized.contains("stop assistant")) {
+            serviceStopping = true
+            waitingForCommand = false
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).apply()
+            updateNotification("Assistant stopped")
+            stopListening()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         val action = when {
             normalized.contains("play music") -> MediaAction.PLAY
             normalized.contains("stop music") -> MediaAction.STOP
@@ -139,6 +154,7 @@ class VoiceAssistantService : Service() {
     }
 
     private fun restartListening() {
+        if (serviceStopping) return
         val r = recognizer ?: return
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -186,6 +202,8 @@ class VoiceAssistantService : Service() {
         const val EXTRA_LANGUAGE = "recognition_language"
         const val ACTION_START = "com.ybapps.heyassistant.START"
         const val ACTION_STOP = "com.ybapps.heyassistant.STOP"
+        const val PREFS = "assistant_settings"
+        const val KEY_AUTO_START = "auto_start_on_headphones"
         private const val CHANNEL_ID = "voice_assistant"
         private const val NOTIFICATION_ID = 41
     }
