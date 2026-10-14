@@ -86,7 +86,7 @@ class VoiceAssistantService : Service() {
     private fun processRecognizedText(text: String) {
         if (!waitingForCommand && containsWakePhrase(text)) {
             waitingForCommand = true
-            updateNotification("מילת ההפעלה זוהתה — אמור פקודה")
+            updateNotification("Wake phrase detected — say a command")
             return
         }
         if (!waitingForCommand || text.isBlank()) return
