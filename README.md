@@ -1,18 +1,23 @@
 # היי עוזר — Hey Assistant
 
-Android / Kotlin / Jetpack Compose prototype for a voice assistant with the wake phrase **״היי עוזר״**.
+Android / Kotlin / Jetpack Compose app for six fixed music commands.
 
-## Current prototype
-- Hebrew-first interface and a language selector mock-up for Hebrew/English.
-- Foreground microphone service with a persistent notification that reports its current state.
-- Attempts on-device speech recognition on Android 12+ and requests offline preference.
-- Prototype commands: tell the time; stop listening. Other recognized phrases are reported as not yet configured.
+## Fixed commands
+- Play Music / נגן מוזיקה
+- Stop Music / עצור מוזיקה
+- Next Song / השיר הבא
+- Previous Song / השיר הקודם
+- Volume Up / הגבר קול
+- Volume Down / הנמך קול
 
-## Important limitations
-- Offline recognition depends on the device having a compatible on-device speech service and downloaded language packs. `EXTRA_PREFER_OFFLINE` alone cannot guarantee offline operation.
-- The current prototype does not yet auto-start on headset connection, and the language selector is not wired into the service yet. These remain implementation tasks.
-- Android restricts microphone foreground services started from the background. User permission and a foreground notification are required.
-- Hebrew/English mixed-language recognition and always-on wake-word detection need device testing and a suitable offline engine/model before being considered complete.
+The app sends Android media-key events for play/stop/next/previous and adjusts the music stream volume for volume commands.
+
+## Important implementation status
+- The fixed command matching and media actions are implemented in the service.
+- **The current speech input still uses Android's SpeechRecognizer API** and therefore does not yet meet the requested independent bundled-engine requirement.
+- The official Vosk model catalogue currently does not list a Hebrew model, so using Vosk alone would not satisfy Hebrew + English. A multilingual on-device model/engine must be integrated and tested before this can be called complete.
+- Offline availability and always-on background microphone behavior are not yet verified on the target device.
+- No APK should be considered ready until GitHub Actions reports a successful build and the resulting artifact is checked.
 
 ## Build
-Open this repository in Android Studio (JDK 17, Android SDK 35) and build the `app` module.
+Open in Android Studio with JDK 17 and Android SDK 35, or use the GitHub Actions workflow.
