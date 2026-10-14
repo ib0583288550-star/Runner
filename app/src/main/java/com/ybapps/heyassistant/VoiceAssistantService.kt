@@ -18,8 +18,8 @@ import java.util.Locale
 class VoiceAssistantService : Service() {
     private var recognizer: SpeechRecognizer? = null
     private var waitingForCommand = false
-    private var language = "he-IL"
-    private var statusText = "ממתין ל״היי עוזר״"
+    private var language = "en-US"
+    private var statusText = "Waiting for Hey Assistant"
 
     override fun onCreate() {
         super.onCreate()
@@ -45,12 +45,12 @@ class VoiceAssistantService : Service() {
 
     private fun startListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            updateNotification("שירות זיהוי הדיבור אינו זמין")
+            updateNotification("Speech recognition is unavailable")
             stopSelf()
             return
         }
         if (Build.VERSION.SDK_INT >= 31 && !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
-            updateNotification("אין מנוע זיהוי מקומי זמין במכשיר")
+            updateNotification("On-device speech recognition is unavailable")
             stopSelf()
             return
         }
@@ -58,7 +58,7 @@ class VoiceAssistantService : Service() {
         recognizer = if (Build.VERSION.SDK_INT >= 31) SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
                     else SpeechRecognizer.createSpeechRecognizer(this)
         recognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { updateNotification(if (waitingForCommand) "מקשיב לפקודת מוזיקה…" else "ממתין ל״היי עוזר״") }
+            override fun onReadyForSpeech(params: Bundle?) { updateNotification(if (waitingForCommand) "Listening for a command…" else "Waiting for Hey Assistant") }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -73,7 +73,7 @@ class VoiceAssistantService : Service() {
                 val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
                 if (!waitingForCommand && containsWakePhrase(text)) {
                     waitingForCommand = true
-                    updateNotification("מילת ההפעלה זוהתה — אמור פקודה")
+                    updateNotification("Wake phrase detected — say a command")
                     try { recognizer?.cancel() } catch (_: Exception) { }
                     restartListening()
                 }
@@ -92,16 +92,16 @@ class VoiceAssistantService : Service() {
         if (!waitingForCommand || text.isBlank()) return
         val normalized = text.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
         val action = when {
-            normalized.contains("play music") || normalized.contains("נגן מוזיקה") || normalized.contains("הפעל מוזיקה") -> MediaAction.PLAY
-            normalized.contains("stop music") || normalized.contains("עצור מוזיקה") || normalized.contains("הפסק מוזיקה") -> MediaAction.STOP
-            normalized.contains("next song") || normalized.contains("השיר הבא") || normalized == "הבא" -> MediaAction.NEXT
-            normalized.contains("previous song") || normalized.contains("השיר הקודם") || normalized.contains("שיר קודם") -> MediaAction.PREVIOUS
-            normalized.contains("volume up") || normalized.contains("הגבר קול") || normalized.contains("הגבר את הקול") -> MediaAction.VOLUME_UP
-            normalized.contains("volume down") || normalized.contains("הנמך קול") || normalized.contains("הנמך את הקול") || normalized.contains("הנמך עוצמה") -> MediaAction.VOLUME_DOWN
+            normalized.contains("play music") -> MediaAction.PLAY
+            normalized.contains("stop music") -> MediaAction.STOP
+            normalized.contains("next song") -> MediaAction.NEXT
+            normalized.contains("previous song") -> MediaAction.PREVIOUS
+            normalized.contains("volume up") -> MediaAction.VOLUME_UP
+            normalized.contains("volume down") -> MediaAction.VOLUME_DOWN
             else -> null
         }
         if (action == null) {
-            updateNotification("לא זוהתה פקודה מהרשימה")
+            updateNotification("Command not recognized")
         } else {
             executeAction(action)
         }
@@ -109,23 +109,23 @@ class VoiceAssistantService : Service() {
     }
 
     private fun containsWakePhrase(text: String): Boolean =
-        text.contains("היי עוזר") || text.contains("היי עוזר") || text.contains("hey assistant")
+        text.contains("hey assistant")
 
     private enum class MediaAction { PLAY, STOP, NEXT, PREVIOUS, VOLUME_UP, VOLUME_DOWN }
 
     private fun executeAction(action: MediaAction) {
         when (action) {
-            MediaAction.PLAY -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY); updateNotification("הפעלת מוזיקה") }
-            MediaAction.STOP -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_STOP); updateNotification("עצירת מוזיקה") }
-            MediaAction.NEXT -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT); updateNotification("השיר הבא") }
-            MediaAction.PREVIOUS -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS); updateNotification("השיר הקודם") }
+            MediaAction.PLAY -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY); updateNotification("Playing music") }
+            MediaAction.STOP -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_STOP); updateNotification("Stopping music") }
+            MediaAction.NEXT -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT); updateNotification("Next song") }
+            MediaAction.PREVIOUS -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS); updateNotification("Previous song") }
             MediaAction.VOLUME_UP -> {
                 (getSystemService(AUDIO_SERVICE) as AudioManager).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0)
-                updateNotification("עוצמת השמע הוגברה")
+                updateNotification("Volume increased")
             }
             MediaAction.VOLUME_DOWN -> {
                 (getSystemService(AUDIO_SERVICE) as AudioManager).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0)
-                updateNotification("עוצמת השמע הונמכה")
+                updateNotification("Volume decreased")
             }
         }
     }
@@ -161,13 +161,13 @@ class VoiceAssistantService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "האזנה קולית", NotificationManager.IMPORTANCE_LOW))
+            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Voice listening", NotificationManager.IMPORTANCE_LOW))
         }
     }
 
     private fun buildNotification(): Notification {
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
-        return builder.setContentTitle("היי עוזר")
+        return builder.setContentTitle("Hey Assistant")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
