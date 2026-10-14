@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         val intent = Intent(this@MainActivity, VoiceAssistantService::class.java)
                                         intent.action = if (enabled) VoiceAssistantService.ACTION_STOP else VoiceAssistantService.ACTION_START
+                                        intent.putExtra(VoiceAssistantService.EXTRA_LANGUAGE, if (english) "en-US" else "he-IL")
                                         if (!enabled) ContextCompat.startForegroundService(this@MainActivity, intent) else startService(intent)
                                         enabled = !enabled
                                     }
