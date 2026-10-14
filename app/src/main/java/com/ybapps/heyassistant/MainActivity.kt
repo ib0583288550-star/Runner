@@ -43,7 +43,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            var enabled by remember { mutableStateOf(false) }
+            var enabled by remember { mutableStateOf(
+                getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+                    .getBoolean(VoiceAssistantService.KEY_AUTO_START, false)
+            ) }
             MaterialTheme(colorScheme = darkColorScheme(
                 primary = Color(0xFF54E0C1),
                 background = Color(0xFF0A0E13),
@@ -62,7 +65,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth().background(Color(0xFF151D26), RoundedCornerShape(24.dp)).padding(18.dp),
                             horizontalAlignment = Alignment.Start
                         ) {
-                            Text(if (enabled) "העוזר פעיל" else "העוזר מוכן", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (enabled) "הפעלה אוטומטית פעילה" else "העוזר מוכן", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(6.dp))
                             Text("Wake phrase: Hey Assistant", color = Color(0xFFB9C7D6), fontSize = 13.sp)
                             Spacer(Modifier.height(14.dp))
@@ -76,25 +79,35 @@ class MainActivity : ComponentActivity() {
                             Text("Volume Down")
                             Text("Stop Assistant")
                             Spacer(Modifier.height(14.dp))
-                            Text("Speech recognition: English (US), on-device", color = Color(0xFF8D9BAA), fontSize = 13.sp)
+                            Text("חבר אוזניות: ההאזנה תתחיל אוטומטית. אמור Hey Assistant ואז את הפקודה.", color = Color(0xFF8D9BAA), fontSize = 13.sp)
                             Spacer(Modifier.height(16.dp))
                             Button(
                                 modifier = Modifier.fillMaxWidth(),
                                 onClick = {
                                     val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
                                     if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    if (Build.VERSION.SDK_INT >= 31) permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
                                     val missing = permissions.filter { ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED }
                                     if (missing.isNotEmpty()) {
                                         permissionLauncher.launch(missing.toTypedArray())
                                     } else {
-                                        val intent = Intent(this@MainActivity, VoiceAssistantService::class.java)
-                                        intent.action = if (enabled) VoiceAssistantService.ACTION_STOP else VoiceAssistantService.ACTION_START
-                                        intent.putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
-                                        if (!enabled) ContextCompat.startForegroundService(this@MainActivity, intent) else startService(intent)
-                                        enabled = !enabled
+                                        val prefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+                                        if (enabled) {
+                                            prefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, false).apply()
+                                            if (prefs.getBoolean("service_active", false)) {
+                                                val stopIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply {
+                                                    action = VoiceAssistantService.ACTION_STOP
+                                                }
+                                                startService(stopIntent)
+                                            }
+                                            enabled = false
+                                        } else {
+                                            prefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
+                                            enabled = true
+                                        }
                                     }
                                 }
-                            ) { Text(if (enabled) "עצור האזנה" else "הפעל עוזר") }
+                            ) { Text(if (enabled) "בטל הפעלה אוטומטית" else "הפעל הפעלה אוטומטית") }
                         }
                         Spacer(Modifier.height(12.dp))
                         Text("זיהוי קולי מקומי ופעולה ברקע נמצאים בפיתוח ובבדיקה.", color = Color(0xFF718096), fontSize = 12.sp)
