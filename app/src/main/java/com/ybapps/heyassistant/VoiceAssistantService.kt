@@ -89,12 +89,15 @@ class VoiceAssistantService : Service() {
     }
 
     private fun processRecognizedText(text: String) {
-        if (!waitingForCommand && containsWakePhrase(text)) {
-            waitingForCommand = true
-            updateNotification("Wake phrase detected — say a command")
+        if (text.isBlank()) return
+        if (containsWakePhrase(text)) {
+            if (!waitingForCommand) {
+                waitingForCommand = true
+                updateNotification("Wake phrase detected — say a command")
+            }
             return
         }
-        if (!waitingForCommand || text.isBlank()) return
+        if (!waitingForCommand) return
         val normalized = text.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
         if (normalized.contains("stop assistant")) {
             serviceStopping = true
