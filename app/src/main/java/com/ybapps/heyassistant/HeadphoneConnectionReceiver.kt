@@ -12,18 +12,34 @@ import androidx.core.content.ContextCompat
 
 class HeadphoneConnectionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val connected = when (intent.action) {
-            Intent.ACTION_HEADSET_PLUG -> intent.getIntExtra("state", 0) == 1
-            "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED",
-            "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED",
-            "android.bluetooth.action.LE_AUDIO_CONNECTION_STATE_CHANGED" ->
-                intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED) == BluetoothProfile.STATE_CONNECTED
-            else -> false
-        }
-        if (!connected) return
+        val isWiredEvent = intent.action == Intent.ACTION_HEADSET_PLUG
+        val isBluetoothEvent = intent.action == "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED" ||
+            intent.action == "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED" ||
+            intent.action == "android.bluetooth.action.LE_AUDIO_CONNECTION_STATE_CHANGED"
+        if (!isWiredEvent && !isBluetoothEvent) return
 
+        val connected = if (isWiredEvent) {
+            intent.getIntExtra("state", 0) == 1
+        } else {
+            intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED) == BluetoothProfile.STATE_CONNECTED
+        }
         val prefs = context.getSharedPreferences(VoiceAssistantService.PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean(VoiceAssistantService.KEY_AUTO_START, false)) return
+
+        if (!connected) {
+            if (prefs.getBoolean("service_active", false)) {
+                try {
+                    val stopIntent = Intent(context, VoiceAssistantService::class.java).apply {
+                        action = VoiceAssistantService.ACTION_HEADPHONES_DISCONNECTED
+                    }
+                    context.startService(stopIntent)
+                } catch (e: Exception) {
+                    Log.w("HeyAssistant", "Could not stop after headset disconnect", e)
+                }
+            }
+            return
+        }
+
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
         if (prefs.getBoolean("service_active", false)) return
 
