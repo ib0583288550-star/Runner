@@ -32,7 +32,7 @@ class VoiceAssistantService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 serviceStopping = true
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).apply()
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).putBoolean("service_active", false).apply()
                 stopListening()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -40,7 +40,7 @@ class VoiceAssistantService : Service() {
             }
             ACTION_START -> {
                 serviceStopping = false
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, true).apply()
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, true).putBoolean("service_active", true).apply()
                 startForeground(NOTIFICATION_ID, buildNotification())
                 startListening()
             }
@@ -99,7 +99,7 @@ class VoiceAssistantService : Service() {
         if (normalized.contains("stop assistant")) {
             serviceStopping = true
             waitingForCommand = false
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).apply()
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).putBoolean("service_active", false).apply()
             updateNotification("Assistant stopped")
             stopListening()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -195,7 +195,11 @@ class VoiceAssistantService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
 
-    override fun onDestroy() { stopListening(); super.onDestroy() }
+    override fun onDestroy() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("service_active", false).apply()
+        stopListening()
+        super.onDestroy()
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
