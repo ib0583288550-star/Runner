@@ -1,0 +1,103 @@
+package com.ybapps.heyassistant
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+
+class MainActivity : ComponentActivity() {
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            var enabled by remember { mutableStateOf(false) }
+            var english by remember { mutableStateOf(false) }
+            MaterialTheme(colorScheme = darkColorScheme(
+                primary = Color(0xFF54E0C1),
+                background = Color(0xFF0A0E13),
+                surface = Color(0xFF151D26)
+            )) {
+                Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0E13)) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("היי עוזר", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color(0xFF54E0C1))
+                        Text("עוזר קולי • yb apps", color = Color.LightGray, fontSize = 14.sp)
+                        Spacer(Modifier.height(28.dp))
+                        Column(
+                            modifier = Modifier.fillMaxWidth().background(Color(0xFF151D26), RoundedCornerShape(24.dp)).padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(if (enabled) "השירות הופעל" else "מוכן להפעלה", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("מילת הפעלה: ״היי עוזר״", color = Color(0xFFB9C7D6))
+                            Spacer(Modifier.height(6.dp))
+                            Text("האזנה ברקע דורשת הרשאת מיקרופון והתראה קבועה.", color = Color(0xFF8D9BAA), fontSize = 13.sp)
+                            Spacer(Modifier.height(18.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("פקודות באנגלית", modifier = Modifier.weight(1f))
+                                Switch(checked = english, onCheckedChange = { english = it })
+                            }
+                            Text(if (english) "שפת הזיהוי: English (US)" else "שפת הזיהוי: עברית (ישראל)", color = Color(0xFF8D9BAA), fontSize = 13.sp)
+                            Spacer(Modifier.height(18.dp))
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                                    if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    val missing = permissions.filter { ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED }
+                                    if (missing.isNotEmpty()) {
+                                        permissionLauncher.launch(missing.toTypedArray())
+                                    } else {
+                                        val intent = Intent(this@MainActivity, VoiceAssistantService::class.java)
+                                        intent.action = if (enabled) VoiceAssistantService.ACTION_STOP else VoiceAssistantService.ACTION_START
+                                        if (!enabled) ContextCompat.startForegroundService(this@MainActivity, intent) else startService(intent)
+                                        enabled = !enabled
+                                    }
+                                }
+                            ) { Text(if (enabled) "עצור האזנה" else "הפעל עוזר") }
+                        }
+                        Spacer(Modifier.height(18.dp))
+                        Text("אב־טיפוס 0.1 • זיהוי אופליין תלוי בתמיכת שירות הדיבור במכשיר", color = Color(0xFF718096), fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
