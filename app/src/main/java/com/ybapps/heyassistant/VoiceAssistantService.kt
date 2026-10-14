@@ -30,9 +30,11 @@ class VoiceAssistantService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         intent?.getStringExtra(EXTRA_LANGUAGE)?.let { language = it }
         when (intent?.action) {
-            ACTION_STOP -> {
+            ACTION_STOP, ACTION_HEADPHONES_DISCONNECTED -> {
                 serviceStopping = true
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).putBoolean("service_active", false).apply()
+                val edit = getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("service_active", false)
+                if (intent.action == ACTION_STOP) edit.putBoolean(KEY_AUTO_START, false)
+                edit.apply()
                 stopListening()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -209,6 +211,7 @@ class VoiceAssistantService : Service() {
         const val EXTRA_LANGUAGE = "recognition_language"
         const val ACTION_START = "com.ybapps.heyassistant.START"
         const val ACTION_STOP = "com.ybapps.heyassistant.STOP"
+        const val ACTION_HEADPHONES_DISCONNECTED = "com.ybapps.heyassistant.HEADPHONES_DISCONNECTED"
         const val PREFS = "assistant_settings"
         const val KEY_AUTO_START = "auto_start_on_headphones"
         private const val CHANNEL_ID = "voice_assistant"
