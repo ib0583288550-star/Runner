@@ -14,7 +14,6 @@ class HeadphoneConnectionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val connected = when (intent.action) {
             Intent.ACTION_HEADSET_PLUG -> intent.getIntExtra("state", 0) == 1
-            BluetoothProfile.ACTION_CONNECTION_STATE_CHANGED,
             "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED",
             "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED",
             "android.bluetooth.action.LE_AUDIO_CONNECTION_STATE_CHANGED" ->
