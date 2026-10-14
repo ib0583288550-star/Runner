@@ -5,9 +5,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.view.KeyEvent
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -27,7 +29,12 @@ class VoiceAssistantService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         intent?.getStringExtra(EXTRA_LANGUAGE)?.let { language = it }
         when (intent?.action) {
-            ACTION_STOP -> { stopListening(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP -> {
+                stopListening()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
             ACTION_START -> {
                 startForeground(NOTIFICATION_ID, buildNotification())
                 startListening()
@@ -38,12 +45,12 @@ class VoiceAssistantService : Service() {
 
     private fun startListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            updateNotification("זיהוי דיבור אינו זמין במכשיר")
+            updateNotification("שירות זיהוי הדיבור אינו זמין")
             stopSelf()
             return
         }
         if (Build.VERSION.SDK_INT >= 31 && !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
-            updateNotification("אין במכשיר מנוע זיהוי מקומי זמין")
+            updateNotification("אין מנוע זיהוי מקומי זמין במכשיר")
             stopSelf()
             return
         }
@@ -51,7 +58,7 @@ class VoiceAssistantService : Service() {
         recognizer = if (Build.VERSION.SDK_INT >= 31) SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
                     else SpeechRecognizer.createSpeechRecognizer(this)
         recognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { updateNotification(if (waitingForCommand) "מקשיב לפקודה…" else "ממתין ל״היי עוזר״") }
+            override fun onReadyForSpeech(params: Bundle?) { updateNotification(if (waitingForCommand) "מקשיב לפקודת מוזיקה…" else "ממתין ל״היי עוזר״") }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -59,26 +66,76 @@ class VoiceAssistantService : Service() {
             override fun onError(error: Int) { restartListening() }
             override fun onResults(results: Bundle?) {
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
-                if (!waitingForCommand && (text.contains("היי עוזר") || text.contains("hey assistant"))) {
-                    waitingForCommand = true
-                    updateNotification("זוהתה מילת ההפעלה — אמור פקודה")
-                } else if (waitingForCommand && text.isNotBlank()) {
-                    handleCommand(text)
-                    waitingForCommand = false
-                }
+                processRecognizedText(text)
                 restartListening()
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
-                if (!waitingForCommand && (text.contains("היי עוזר") || text.contains("hey assistant"))) {
+                if (!waitingForCommand && containsWakePhrase(text)) {
                     waitingForCommand = true
-                    updateNotification("זוהתה מילת ההפעלה — אמור פקודה")
+                    updateNotification("מילת ההפעלה זוהתה — אמור פקודה")
+                    try { recognizer?.cancel() } catch (_: Exception) { }
                     restartListening()
                 }
             }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
         restartListening()
+    }
+
+    private fun processRecognizedText(text: String) {
+        if (!waitingForCommand && containsWakePhrase(text)) {
+            waitingForCommand = true
+            updateNotification("מילת ההפעלה זוהתה — אמור פקודה")
+            return
+        }
+        if (!waitingForCommand || text.isBlank()) return
+        val normalized = text.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
+        val action = when {
+            normalized.contains("play music") || normalized.contains("נגן מוזיקה") || normalized.contains("הפעל מוזיקה") -> MediaAction.PLAY
+            normalized.contains("stop music") || normalized.contains("עצור מוזיקה") || normalized.contains("הפסק מוזיקה") -> MediaAction.STOP
+            normalized.contains("next song") || normalized.contains("השיר הבא") || normalized == "הבא" -> MediaAction.NEXT
+            normalized.contains("previous song") || normalized.contains("השיר הקודם") || normalized.contains("שיר קודם") -> MediaAction.PREVIOUS
+            normalized.contains("volume up") || normalized.contains("הגבר קול") || normalized.contains("הגבר את הקול") -> MediaAction.VOLUME_UP
+            normalized.contains("volume down") || normalized.contains("הנמך קול") || normalized.contains("הנמך את הקול") || normalized.contains("הנמך עוצמה") -> MediaAction.VOLUME_DOWN
+            else -> null
+        }
+        if (action == null) {
+            updateNotification("לא זוהתה פקודה מהרשימה")
+        } else {
+            executeAction(action)
+        }
+        waitingForCommand = false
+    }
+
+    private fun containsWakePhrase(text: String): Boolean =
+        text.contains("היי עוזר") || text.contains("היי עוזר") || text.contains("hey assistant")
+
+    private enum class MediaAction { PLAY, STOP, NEXT, PREVIOUS, VOLUME_UP, VOLUME_DOWN }
+
+    private fun executeAction(action: MediaAction) {
+        when (action) {
+            MediaAction.PLAY -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY); updateNotification("הפעלת מוזיקה") }
+            MediaAction.STOP -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_STOP); updateNotification("עצירת מוזיקה") }
+            MediaAction.NEXT -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT); updateNotification("השיר הבא") }
+            MediaAction.PREVIOUS -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS); updateNotification("השיר הקודם") }
+            MediaAction.VOLUME_UP -> {
+                (getSystemService(AUDIO_SERVICE) as AudioManager).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0)
+                updateNotification("עוצמת השמע הוגברה")
+            }
+            MediaAction.VOLUME_DOWN -> {
+                (getSystemService(AUDIO_SERVICE) as AudioManager).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0)
+                updateNotification("עוצמת השמע הונמכה")
+            }
+        }
+    }
+
+    private fun sendMediaKey(keyCode: Int) {
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        val down = KeyEvent(KeyEvent.ACTION_DOWN, keyCode)
+        val up = KeyEvent(KeyEvent.ACTION_UP, keyCode)
+        audio.dispatchMediaKeyEvent(down)
+        audio.dispatchMediaKeyEvent(up)
     }
 
     private fun restartListening() {
@@ -94,25 +151,6 @@ class VoiceAssistantService : Service() {
             r.cancel()
             r.startListening(intent)
         } catch (_: Exception) { }
-    }
-
-    private fun handleCommand(command: String) {
-        when {
-            command.contains("עצור") || command.contains("stop listening") -> {
-                updateNotification("הפקודה התקבלה: עצור האזנה")
-                stopListening()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-            command.contains("מה השעה") || command.contains("what time") -> {
-                val time = java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date())
-                updateNotification("השעה $time")
-            }
-            command.contains("פתח הגדרות") || command.contains("open settings") -> {
-                updateNotification("כדי לפתוח הגדרות, יש להפעיל זאת מתוך האפליקציה")
-            }
-            else -> updateNotification("לא הוגדרה עדיין פקודה: $command")
-        }
     }
 
     private fun stopListening() {
@@ -138,8 +176,7 @@ class VoiceAssistantService : Service() {
 
     private fun updateNotification(text: String) {
         statusText = text.take(120)
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification())
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
 
     override fun onDestroy() { stopListening(); super.onDestroy() }
