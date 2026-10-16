@@ -119,22 +119,11 @@ class VoiceAssistantService : Service() {
                 try {
                     if (spoken.isNotBlank()) processRecognizedText(spoken)
                 } finally {
-                    // Do not start a second recognition session while this result is being handled.
-                    if (!serviceStopping) {
-                        handler.postDelayed({
-                            if (!serviceStopping) {
-                                // Recreate the recognizer after each completed command so the
-                                // previous capture session is released before listening again.
-                                createRecognizer()
-                                processingCommand = false
-                                scheduleRestart(500)
-                            } else {
-                                processingCommand = false
-                            }
-                        }, 1200)
-                    } else {
-                        processingCommand = false
-                    }
+                    // Keep the same recognizer and Bluetooth route alive between commands.
+                    // Restart listening promptly after handling each result instead of
+                    // destroying/recreating the recognizer, which can interrupt media audio.
+                    processingCommand = false
+                    if (!serviceStopping) scheduleRestart(250)
                 }
             }
             override fun onPartialResults(partialResults: Bundle?) {
