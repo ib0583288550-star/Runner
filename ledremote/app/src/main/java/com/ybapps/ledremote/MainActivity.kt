@@ -27,6 +27,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import kotlin.math.atan2
+import kotlin.math.PI
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -82,12 +86,22 @@ fun LedRemoteApp(notify: (String)->Unit) {
        drawCircle(color=selected,radius=53.dp.toPx())
        drawCircle(color=Color.White.copy(alpha=.9f),radius=8.dp.toPx(),center=Offset(size.width/2,size.height/2))
       }
-      Box(Modifier.size(205.dp).clickable { selected=listOf(Color.Red,Color.Yellow,Color.Green,Color.Cyan,Color.Blue,Color.Magenta).random();notify("צבע נבחר; שידור התאורה עוד לא מחובר") })
+      Box(
+       Modifier.size(205.dp).pointerInput(Unit) {
+        detectTapGestures { tap ->
+         val center = size.width / 2f
+         val dx = tap.x - center
+         val dy = tap.y - center
+         val degrees = ((atan2(dy, dx) * 180.0 / PI) + 360.0) % 360.0
+         selected = Color.hsv(degrees.toFloat(), 1f, 1f)
+        }
+       }
+      )
      }
      Text("צבעים מהירים",color=Color(0xFFB7C4D8),fontSize=13.sp)
      Spacer(Modifier.height(8.dp))
      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-      presets.forEach { (name,color) -> Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.clickable { selected=color }) {
+      presets.forEach { (name,color) -> Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.clickable { selected=color; notify("נבחר הצבע: "+name) }) {
        Box(Modifier.size(27.dp).clip(CircleShape).background(color),contentAlignment=Alignment.Center) { if(selected==color) Box(Modifier.size(8.dp).clip(CircleShape).background(Color.White)) }
        Spacer(Modifier.height(4.dp)); Text(name,color=Color(0xFF9EADC4),fontSize=9.sp)
       } }
@@ -101,7 +115,7 @@ fun LedRemoteApp(notify: (String)->Unit) {
      }
      Spacer(Modifier.height(12.dp))
      LazyVerticalGrid(columns=GridCells.Fixed(3),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
-      items(presets) { (name,color) -> Column(Modifier.clip(RoundedCornerShape(14.dp)).background(Panel).clickable { selected=color }.padding(vertical=10.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+      items(presets) { (name,color) -> Column(Modifier.clip(RoundedCornerShape(14.dp)).background(Panel).clickable { selected=color; notify("נבחר הצבע: "+name) }.padding(vertical=10.dp),horizontalAlignment=Alignment.CenterHorizontally) {
        Box(Modifier.size(29.dp).clip(CircleShape).background(color)); Spacer(Modifier.height(5.dp)); Text(name,color=Color.White,fontSize=12.sp)
       } }
       items(effects) { e -> Column(Modifier.clip(RoundedCornerShape(14.dp)).background(if(effect==e) Color(0xFF243B55) else Panel).clickable { effect=e;notify("נבחר אפקט: "+e) }.padding(vertical=9.dp),horizontalAlignment=Alignment.CenterHorizontally) {
