@@ -8,7 +8,9 @@ import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.view.KeyEvent
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -17,9 +19,12 @@ import java.util.Locale
 
 class VoiceAssistantService : Service() {
     private var recognizer: SpeechRecognizer? = null
-    private var language = "en-US"
-    private var statusText = "Listening for commands"
+    private var language = "he-IL"
+    private var statusText = "ממתין לפקודה קולית"
     private var serviceStopping = false
+    private var useHebrew = true
+    private val handler = Handler(Looper.getMainLooper())
+    private val restartTask = Runnable { startRecognitionSession() }
 
     override fun onCreate() {
         super.onCreate()
@@ -32,7 +37,7 @@ class VoiceAssistantService : Service() {
             ACTION_STOP, ACTION_HEADPHONES_DISCONNECTED -> {
                 serviceStopping = true
                 val edit = getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("service_active", false)
-                if (intent?.action == ACTION_STOP) edit.putBoolean(KEY_AUTO_START, false)
+                if (intent.action == ACTION_STOP) edit.putBoolean(KEY_AUTO_START, false)
                 edit.apply()
                 stopListening()
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -41,7 +46,8 @@ class VoiceAssistantService : Service() {
             }
             ACTION_START -> {
                 serviceStopping = false
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, true).putBoolean("service_active", true).apply()
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putBoolean(KEY_AUTO_START, true).putBoolean("service_active", true).apply()
                 startForeground(NOTIFICATION_ID, buildNotification())
                 startListening()
             }
@@ -51,59 +57,97 @@ class VoiceAssistantService : Service() {
 
     private fun startListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            updateNotification("Speech recognition is unavailable")
+            updateNotification("אין שירות זיהוי דיבור זמין במכשיר")
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("service_active", false).apply()
             stopSelf()
             return
         }
-        if (Build.VERSION.SDK_INT >= 31 && !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
-            updateNotification("On-device speech recognition is unavailable")
-            stopSelf()
-            return
-        }
-        recognizer?.destroy()
-        recognizer = if (Build.VERSION.SDK_INT >= 31) SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
-                    else SpeechRecognizer.createSpeechRecognizer(this)
+        stopListening()
+        serviceStopping = false
+        recognizer = SpeechRecognizer.createSpeechRecognizer(this)
         recognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { updateNotification("Listening for commands…") }
-            override fun onBeginningOfSpeech() {}
+            override fun onReadyForSpeech(params: Bundle?) {
+                updateNotification(if (useHebrew) "מאזין בעברית — אמור פקודה" else "Listening in English — say a command")
+            }
+            override fun onBeginningOfSpeech() { updateNotification("קולט דיבור…") }
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onError(error: Int) { if (!serviceStopping) restartListening() }
-            override fun onResults(results: Bundle?) {
-                val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
-                processRecognizedText(text)
-                if (!serviceStopping) restartListening()
+            override fun onEndOfSpeech() { updateNotification("מעבד את הפקודה…") }
+            override fun onError(error: Int) {
+                if (!serviceStopping) {
+                    useHebrew = !useHebrew
+                    scheduleRestart(700)
+                }
             }
-            override fun onPartialResults(partialResults: Bundle?) { }
+            override fun onResults(results: Bundle?) {
+                val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
+                if (text.isBlank()) {
+                    useHebrew = !useHebrew
+                } else {
+                    processRecognizedText(text)
+                }
+                if (!serviceStopping) scheduleRestart(650)
+            }
+            override fun onPartialResults(partialResults: Bundle?) {
+                val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                if (!partial.isNullOrBlank()) updateNotification("זיהוי: ${partial.take(70)}")
+            }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
-        restartListening()
+        scheduleRestart(250)
+    }
+
+    private fun scheduleRestart(delayMs: Long) {
+        handler.removeCallbacks(restartTask)
+        handler.postDelayed(restartTask, delayMs)
+    }
+
+    private fun startRecognitionSession() {
+        if (serviceStopping) return
+        val r = recognizer ?: return
+        val sessionLanguage = if (useHebrew) "he-IL" else "en-US"
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, sessionLanguage)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, sessionLanguage)
+                putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            }
+            r.startListening(intent)
+        } catch (_: Exception) {
+            if (!serviceStopping) scheduleRestart(1200)
+        }
     }
 
     private fun processRecognizedText(text: String) {
         if (text.isBlank()) return
-        val normalized = text.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
-        if (normalized.contains("stop assistant")) {
+        val normalized = text.replace(Regex("[^\\p{L}\\p{N} ]"), " ")
+            .replace(Regex("\\s+"), " ").trim()
+        if (normalized.contains("stop assistant") || normalized.contains("עצור את העוזר") || normalized.contains("תעצור את העוזר")) {
             serviceStopping = true
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO_START, false).putBoolean("service_active", false).apply()
-            updateNotification("Assistant stopped")
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_AUTO_START, false).putBoolean("service_active", false).apply()
+            updateNotification("העוזר הופסק")
             stopListening()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
         val action = when {
-            normalized.contains("play music") -> MediaAction.PLAY
-            normalized.contains("stop music") -> MediaAction.STOP
-            normalized.contains("next song") -> MediaAction.NEXT
-            normalized.contains("previous song") -> MediaAction.PREVIOUS
-            normalized.contains("volume up") -> MediaAction.VOLUME_UP
-            normalized.contains("volume down") -> MediaAction.VOLUME_DOWN
+            normalized.contains("play music") || normalized.contains("נגן מוזיקה") || normalized.contains("תנגן מוזיקה") || normalized.contains("הפעל מוזיקה") -> MediaAction.PLAY
+            normalized.contains("stop music") || normalized.contains("עצור מוזיקה") || normalized.contains("תעצור מוזיקה") -> MediaAction.STOP
+            normalized.contains("next song") || normalized.contains("השיר הבא") || normalized.contains("שיר הבא") -> MediaAction.NEXT
+            normalized.contains("previous song") || normalized.contains("השיר הקודם") || normalized.contains("שיר קודם") -> MediaAction.PREVIOUS
+            normalized.contains("volume up") || normalized.contains("הגבר קול") || normalized.contains("תגביר קול") || normalized.contains("הגבר את הקול") -> MediaAction.VOLUME_UP
+            normalized.contains("volume down") || normalized.contains("הנמך קול") || normalized.contains("תנמיך קול") || normalized.contains("הנמך את הקול") -> MediaAction.VOLUME_DOWN
             else -> null
         }
         if (action == null) {
-            updateNotification("Command not recognized")
+            updateNotification("לא זוהתה פקודה: ${text.take(65)}")
         } else {
             executeAction(action)
         }
@@ -113,47 +157,30 @@ class VoiceAssistantService : Service() {
 
     private fun executeAction(action: MediaAction) {
         when (action) {
-            MediaAction.PLAY -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY); updateNotification("Playing music") }
-            MediaAction.STOP -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_STOP); updateNotification("Stopping music") }
-            MediaAction.NEXT -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT); updateNotification("Next song") }
-            MediaAction.PREVIOUS -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS); updateNotification("Previous song") }
+            MediaAction.PLAY -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY); updateNotification("מפעיל מוזיקה") }
+            MediaAction.STOP -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_STOP); updateNotification("עוצר מוזיקה") }
+            MediaAction.NEXT -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT); updateNotification("השיר הבא") }
+            MediaAction.PREVIOUS -> { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS); updateNotification("השיר הקודם") }
             MediaAction.VOLUME_UP -> {
                 (getSystemService(AUDIO_SERVICE) as AudioManager).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, 0)
-                updateNotification("Volume increased")
+                updateNotification("הווליום הוגבר")
             }
             MediaAction.VOLUME_DOWN -> {
                 (getSystemService(AUDIO_SERVICE) as AudioManager).adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, 0)
-                updateNotification("Volume decreased")
+                updateNotification("הווליום הונמך")
             }
         }
     }
 
     private fun sendMediaKey(keyCode: Int) {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-        val down = KeyEvent(KeyEvent.ACTION_DOWN, keyCode)
-        val up = KeyEvent(KeyEvent.ACTION_UP, keyCode)
-        audio.dispatchMediaKeyEvent(down)
-        audio.dispatchMediaKeyEvent(up)
-    }
-
-    private fun restartListening() {
-        if (serviceStopping) return
-        val r = recognizer ?: return
-        try {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            }
-            r.cancel()
-            r.startListening(intent)
-        } catch (_: Exception) { }
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
     }
 
     private fun stopListening() {
-        try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) { }
+        handler.removeCallbacks(restartTask)
+        try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
     }
 
@@ -166,7 +193,7 @@ class VoiceAssistantService : Service() {
 
     private fun buildNotification(): Notification {
         val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
-        return builder.setContentTitle("Hey Assistant")
+        return builder.setContentTitle("היי עוזר")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
@@ -179,10 +206,12 @@ class VoiceAssistantService : Service() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(restartTask)
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("service_active", false).apply()
         stopListening()
         super.onDestroy()
     }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
