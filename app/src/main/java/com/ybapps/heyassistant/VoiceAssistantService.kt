@@ -72,7 +72,10 @@ class VoiceAssistantService : Service() {
         }
         serviceStopping = false
         if (!prepareBluetoothMicrophone()) {
-            updateNotification("Bluetooth microphone unavailable. Connect a headset with a microphone and restart.")
+            updateNotification("Bluetooth microphone unavailable. Waiting for a headset connection.")
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("service_active", false).apply()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
             return
         }
         createRecognizer()
