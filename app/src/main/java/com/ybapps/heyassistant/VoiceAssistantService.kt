@@ -98,8 +98,13 @@ class VoiceAssistantService : Service() {
                         else -> "שגיאת זיהוי $error"
                     }
                     updateNotification("$detail — מנסה להמשיך להאזין")
-                    try { recognizer?.cancel() } catch (_: Exception) {}
-                    scheduleRestart(700)
+                    // Some Android speech services leave a recognizer unusable after an error.
+                    // Recreate the recognition session instead of repeatedly reusing that instance.
+                    handler.removeCallbacks(restartTask)
+                    handler.removeCallbacks(routeRetryTask)
+                    handler.postDelayed({
+                        if (!serviceStopping) startListening()
+                    }, 1000)
                 }
             }
             override fun onResults(results: Bundle?) {
@@ -210,8 +215,8 @@ class VoiceAssistantService : Service() {
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 30000L)
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30000L)
             }
             r.startListening(intent)
