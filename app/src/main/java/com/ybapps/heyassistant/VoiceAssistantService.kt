@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -23,6 +24,8 @@ class VoiceAssistantService : Service() {
     private var statusText = "ממתין לפקודה קולית"
     private var serviceStopping = false
     private var useHebrew = true
+    private var legacyScoStarted = false
+    private var routeRetryTask = Runnable { if (!serviceStopping) startListening() }
     private val handler = Handler(Looper.getMainLooper())
     private val restartTask = Runnable { startRecognitionSession() }
 
@@ -64,6 +67,12 @@ class VoiceAssistantService : Service() {
         }
         stopListening()
         serviceStopping = false
+        if (!prepareBluetoothMicrophone()) {
+            updateNotification("שגיאה: לא ניתן לנתב למיקרופון Bluetooth. בדוק שהאוזנייה מחוברת ותומכת במיקרופון.")
+            handler.removeCallbacks(routeRetryTask)
+            handler.postDelayed(routeRetryTask, 2500)
+            return
+        }
         recognizer = SpeechRecognizer.createSpeechRecognizer(this)
         recognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
@@ -85,7 +94,7 @@ class VoiceAssistantService : Service() {
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "לא נשמע דיבור"
                         else -> "שגיאת זיהוי $error"
                     }
-                    updateNotification("$detail — בודק שוב את מיקרופון האוזנייה")
+                    updateNotification("$detail — בדוק חיבור Bluetooth והרשאת מיקרופון")
                     useHebrew = !useHebrew
                     scheduleRestart(1000)
                 }
@@ -106,7 +115,60 @@ class VoiceAssistantService : Service() {
             }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
-        scheduleRestart(250)
+        scheduleRestart(700)
+    }
+
+    private fun prepareBluetoothMicrophone(): Boolean {
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        try {
+            audio.mode = AudioManager.MODE_IN_COMMUNICATION
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val bluetoothDevice = audio.availableCommunicationDevices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                }
+                if (bluetoothDevice == null || !audio.setCommunicationDevice(bluetoothDevice)) {
+                    audio.clearCommunicationDevice()
+                    audio.mode = AudioManager.MODE_NORMAL
+                    return false
+                }
+                updateNotification("מיקרופון Bluetooth נבחר — מתחיל להאזין")
+                return true
+            }
+            val outputs = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            val bluetoothConnected = outputs.any {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+            }
+            if (!bluetoothConnected) {
+                audio.mode = AudioManager.MODE_NORMAL
+                return false
+            }
+            audio.startBluetoothSco()
+            audio.isBluetoothScoOn = true
+            legacyScoStarted = true
+            updateNotification("מתחבר למיקרופון Bluetooth…")
+            handler.removeCallbacks(restartTask)
+            handler.postDelayed(restartTask, 1400)
+            return true
+        } catch (e: Exception) {
+            updateNotification("שגיאה בהפעלת מיקרופון Bluetooth: ${e.message ?: "לא ידוע"}")
+            try { audio.mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
+            return false
+        }
+    }
+
+    private fun releaseBluetoothMicrophone() {
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.clearCommunicationDevice()
+            if (legacyScoStarted) {
+                audio.isBluetoothScoOn = false
+                audio.stopBluetoothSco()
+                legacyScoStarted = false
+            }
+            audio.mode = AudioManager.MODE_NORMAL
+        } catch (_: Exception) {}
     }
 
     private fun scheduleRestart(delayMs: Long) {
@@ -191,8 +253,10 @@ class VoiceAssistantService : Service() {
 
     private fun stopListening() {
         handler.removeCallbacks(restartTask)
+        handler.removeCallbacks(routeRetryTask)
         try { recognizer?.cancel(); recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null
+        releaseBluetoothMicrophone()
     }
 
     private fun createNotificationChannel() {
