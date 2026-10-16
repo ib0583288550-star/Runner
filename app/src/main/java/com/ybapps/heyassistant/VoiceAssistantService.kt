@@ -23,6 +23,7 @@ class VoiceAssistantService : Service() {
     private var language = "en-US"
     private var statusText = "Waiting for voice command"
     private var serviceStopping = false
+    private var processingCommand = false
     private var legacyScoStarted = false
     private var routeReadyDelayMs = 1200L
     private var selectedCommunicationDeviceId: Int? = null
@@ -88,7 +89,7 @@ class VoiceAssistantService : Service() {
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() { updateNotification("Processing command") }
             override fun onError(error: Int) {
-                if (serviceStopping) return
+                if (serviceStopping || processingCommand) return
                 val detail = when (error) {
                     SpeechRecognizer.ERROR_AUDIO -> "Audio error"
                     SpeechRecognizer.ERROR_CLIENT -> "Recognition service reset"
@@ -110,11 +111,24 @@ class VoiceAssistantService : Service() {
                 }, if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1500 else 600)
             }
             override fun onResults(results: Bundle?) {
+                if (serviceStopping || processingCommand) return
+                processingCommand = true
+                handler.removeCallbacks(restartTask)
                 val spoken = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
-                if (spoken.isNotBlank()) processRecognizedText(spoken)
-                // Give the command action and notification time to complete before listening again.
-                if (!serviceStopping) scheduleRestart(1800)
+                try {
+                    if (spoken.isNotBlank()) processRecognizedText(spoken)
+                } finally {
+                    // Do not start a second recognition session while this result is being handled.
+                    if (!serviceStopping) {
+                        handler.postDelayed({
+                            processingCommand = false
+                            if (!serviceStopping) startRecognitionSession()
+                        }, 1200)
+                    } else {
+                        processingCommand = false
+                    }
+                }
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
