@@ -25,6 +25,7 @@ class VoiceAssistantService : Service() {
     private var serviceStopping = false
     private var useHebrew = true
     private var legacyScoStarted = false
+    private var routeReadyDelayMs = 700L
     private var routeRetryTask = Runnable { if (!serviceStopping) startListening() }
     private val handler = Handler(Looper.getMainLooper())
     private val restartTask = Runnable { startRecognitionSession() }
@@ -115,13 +116,14 @@ class VoiceAssistantService : Service() {
             }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
-        scheduleRestart(700)
+        scheduleRestart(routeReadyDelayMs)
     }
 
     private fun prepareBluetoothMicrophone(): Boolean {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
         try {
             audio.mode = AudioManager.MODE_IN_COMMUNICATION
+            routeReadyDelayMs = 700L
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val bluetoothDevice = audio.availableCommunicationDevices.firstOrNull {
                     it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
@@ -148,8 +150,7 @@ class VoiceAssistantService : Service() {
             audio.isBluetoothScoOn = true
             legacyScoStarted = true
             updateNotification("מתחבר למיקרופון Bluetooth…")
-            handler.removeCallbacks(restartTask)
-            handler.postDelayed(restartTask, 1400)
+            routeReadyDelayMs = 1600L
             return true
         } catch (e: Exception) {
             updateNotification("שגיאה בהפעלת מיקרופון Bluetooth: ${e.message ?: "לא ידוע"}")
