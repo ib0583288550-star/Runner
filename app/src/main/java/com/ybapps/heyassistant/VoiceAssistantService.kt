@@ -97,20 +97,16 @@ class VoiceAssistantService : Service() {
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "לא נשמע דיבור"
                         else -> "שגיאת זיהוי $error"
                     }
-                    updateNotification("$detail — בדוק חיבור Bluetooth והרשאת מיקרופון")
-                    useHebrew = !useHebrew
-                    scheduleRestart(1000)
+                    updateNotification("$detail — מנסה להמשיך להאזין")
+                    try { recognizer?.cancel() } catch (_: Exception) {}
+                    scheduleRestart(700)
                 }
             }
             override fun onResults(results: Bundle?) {
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
-                if (text.isBlank()) {
-                    useHebrew = !useHebrew
-                } else {
-                    processRecognizedText(text)
-                }
-                if (!serviceStopping) scheduleRestart(650)
+                if (text.isNotBlank()) processRecognizedText(text)
+                if (!serviceStopping) scheduleRestart(350)
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
@@ -214,6 +210,9 @@ class VoiceAssistantService : Service() {
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30000L)
             }
             r.startListening(intent)
         } catch (_: Exception) {
