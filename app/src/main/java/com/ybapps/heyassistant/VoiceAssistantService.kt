@@ -25,7 +25,9 @@ class VoiceAssistantService : Service() {
     private var serviceStopping = false
     private var useHebrew = true
     private var legacyScoStarted = false
-    private var routeReadyDelayMs = 700L
+    private var routeReadyDelayMs = 1200L
+    private var selectedCommunicationDeviceId: Int? = null
+    private var routeWaitAttempts = 0
     private var routeRetryTask = Runnable { if (!serviceStopping) startListening() }
     private val handler = Handler(Looper.getMainLooper())
     private val restartTask = Runnable { startRecognitionSession() }
@@ -123,7 +125,9 @@ class VoiceAssistantService : Service() {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
         try {
             audio.mode = AudioManager.MODE_IN_COMMUNICATION
-            routeReadyDelayMs = 700L
+            routeReadyDelayMs = 1200L
+            selectedCommunicationDeviceId = null
+            routeWaitAttempts = 0
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val bluetoothDevice = audio.availableCommunicationDevices.firstOrNull {
                     it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
@@ -134,7 +138,8 @@ class VoiceAssistantService : Service() {
                     audio.mode = AudioManager.MODE_NORMAL
                     return false
                 }
-                updateNotification("מיקרופון Bluetooth נבחר — מתחיל להאזין")
+                selectedCommunicationDeviceId = bluetoothDevice.id
+                updateNotification("נבחר התקן Bluetooth: " + bluetoothDevice.productName + " — מוודא ניתוב מיקרופון…")
                 return true
             }
             val outputs = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
@@ -163,6 +168,8 @@ class VoiceAssistantService : Service() {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.clearCommunicationDevice()
+            selectedCommunicationDeviceId = null
+            routeWaitAttempts = 0
             if (legacyScoStarted) {
                 audio.isBluetoothScoOn = false
                 audio.stopBluetoothSco()
@@ -180,6 +187,23 @@ class VoiceAssistantService : Service() {
     private fun startRecognitionSession() {
         if (serviceStopping) return
         val r = recognizer ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+            val expectedId = selectedCommunicationDeviceId
+            val activeDevice = audio.communicationDevice
+            if (expectedId == null || activeDevice?.id != expectedId) {
+                routeWaitAttempts++
+                if (routeWaitAttempts >= 40) {
+                    updateNotification("שגיאה: Android לא אישר ניתוב לאוזניות Bluetooth. לא הופעל מיקרופון הטלפון. נתק וחבר מחדש את האוזניות.")
+                    return
+                }
+                updateNotification("ממתין לניתוב מיקרופון Bluetooth… (" + routeWaitAttempts + "/40)")
+                scheduleRestart(500)
+                return
+            }
+            routeWaitAttempts = 0
+            updateNotification("מיקרופון Bluetooth פעיל — מאזין")
+        }
         val sessionLanguage = if (useHebrew) "he-IL" else "en-US"
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
