@@ -75,8 +75,19 @@ class VoiceAssistantService : Service() {
             override fun onEndOfSpeech() { updateNotification("מעבד את הפקודה…") }
             override fun onError(error: Int) {
                 if (!serviceStopping) {
+                    val detail = when (error) {
+                        SpeechRecognizer.ERROR_AUDIO -> "שגיאת שמע"
+                        SpeechRecognizer.ERROR_CLIENT -> "שגיאת שירות זיהוי"
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "אין הרשאת מיקרופון"
+                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "שגיאת רשת בזיהוי דיבור"
+                        SpeechRecognizer.ERROR_NO_MATCH -> "לא זוהתה פקודה"
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "שירות הזיהוי תפוס"
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "לא נשמע דיבור"
+                        else -> "שגיאת זיהוי $error"
+                    }
+                    updateNotification("$detail — בודק שוב את מיקרופון האוזנייה")
                     useHebrew = !useHebrew
-                    scheduleRestart(700)
+                    scheduleRestart(1000)
                 }
             }
             override fun onResults(results: Bundle?) {
