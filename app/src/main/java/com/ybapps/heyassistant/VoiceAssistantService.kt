@@ -113,7 +113,8 @@ class VoiceAssistantService : Service() {
                 val spoken = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull().orEmpty().lowercase(Locale.ROOT)
                 if (spoken.isNotBlank()) processRecognizedText(spoken)
-                if (!serviceStopping) scheduleRestart(250)
+                // Give the command action and notification time to complete before listening again.
+                if (!serviceStopping) scheduleRestart(1800)
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
@@ -214,8 +215,8 @@ class VoiceAssistantService : Service() {
 
     private fun processRecognizedText(text: String) {
         if (text.isBlank()) return
-        val normalized = text.replace(Regex("[^\\\\p{L}\\\\p{N} ]"), " ")
-            .replace(Regex("\\\\s+"), " ").trim()
+        val normalized = text.replace(Regex("[^\\p{L}\\p{N} ]"), " ")
+            .replace(Regex("\\s+"), " ").trim()
         if (normalized.contains("stop assistant")) {
             serviceStopping = true
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
