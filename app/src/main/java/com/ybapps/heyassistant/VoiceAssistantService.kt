@@ -23,7 +23,7 @@ class VoiceAssistantService : Service() {
     private var language = "he-IL"
     private var statusText = "ממתין לפקודה קולית"
     private var serviceStopping = false
-    private var useHebrew = true
+    private var useHebrew = false
     private var legacyScoStarted = false
     private var routeReadyDelayMs = 1200L
     private var selectedCommunicationDeviceId: Int? = null
