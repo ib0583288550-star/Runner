@@ -1,8 +1,9 @@
 package com.ybapps.heyassistant
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothProfile
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -21,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -40,9 +43,29 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
+    private var pendingActivation = false
+    private var autoStartEnabled by mutableStateOf(false)
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { refreshHeadphoneStatus() }
+    ) { results ->
+        refreshHeadphoneStatus()
+        if (pendingActivation && results.values.all { it }) {
+            val prefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+            prefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
+            autoStartEnabled = true
+            val startIntent = Intent(this, VoiceAssistantService::class.java).apply {
+                action = VoiceAssistantService.ACTION_START
+                putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
+            }
+            try {
+                ContextCompat.startForegroundService(this, startIntent)
+                serviceActive = true
+            } catch (_: Exception) {
+                serviceActive = false
+            }
+        }
+        pendingActivation = false
+    }
 
     private var headphonesConnected by mutableStateOf(false)
     private var serviceActive by mutableStateOf(false)
@@ -103,50 +126,22 @@ class MainActivity : ComponentActivity() {
             .edit().putBoolean("headphones_connected", connected).apply()
     }
 
-    @Suppress("DEPRECATION")
     private fun refreshHeadphoneStatus() {
-        val wiredSticky = registerReceiver(null, IntentFilter(Intent.ACTION_HEADSET_PLUG))
-        val wiredConnected = wiredSticky?.getIntExtra("state", 0) == 1
-        if (wiredConnected) {
-            headphonesConnected = true
-            saveHeadphoneState(true)
-            return
-        }
-        if (Build.VERSION.SDK_INT >= 31 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            headphonesConnected = false
-            saveHeadphoneState(false)
-            return
-        }
-        val adapter = BluetoothAdapter.getDefaultAdapter()
-        if (adapter == null || !adapter.isEnabled) {
-            headphonesConnected = false
-            saveHeadphoneState(false)
-            return
-        }
-        var checkedProfiles = 0
-        var anyConnected = false
-        val callback = object : BluetoothProfile.ServiceListener {
-            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-                try {
-                    if (proxy.connectedDevices.isNotEmpty()) anyConnected = true
-                } catch (_: SecurityException) { }
-                checkedProfiles++
-                if (checkedProfiles >= 2) {
-                    headphonesConnected = anyConnected
-                    saveHeadphoneState(anyConnected)
-                }
-                try { adapter.closeProfileProxy(profile, proxy) } catch (_: Exception) { }
+        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        val outputDevices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        val connected = outputDevices.any { device ->
+            when (device.type) {
+                AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                AudioDeviceInfo.TYPE_USB_HEADSET,
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                AudioDeviceInfo.TYPE_BLE_HEADSET -> true
+                else -> false
             }
-            override fun onServiceDisconnected(profile: Int) { }
         }
-        try {
-            adapter.getProfileProxy(this, callback, BluetoothProfile.A2DP)
-            adapter.getProfileProxy(this, callback, BluetoothProfile.HEADSET)
-        } catch (_: SecurityException) {
-            headphonesConnected = false
-            saveHeadphoneState(false)
-        }
+        headphonesConnected = connected
+        saveHeadphoneState(connected)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -154,10 +149,9 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
         headphonesConnected = prefs.getBoolean("headphones_connected", false)
         serviceActive = prefs.getBoolean("service_active", false)
+        autoStartEnabled = prefs.getBoolean(VoiceAssistantService.KEY_AUTO_START, false)
         setContent {
-            var enabled by remember {
-                mutableStateOf(prefs.getBoolean(VoiceAssistantService.KEY_AUTO_START, false))
-            }
+            val enabled = autoStartEnabled
             val connected = headphonesConnected
             val active = serviceActive
             MaterialTheme(colorScheme = darkColorScheme(
@@ -167,8 +161,8 @@ class MainActivity : ComponentActivity() {
             )) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0E13)) {
                     Column(
-                        modifier = Modifier.fillMaxSize().padding(20.dp),
-                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                        verticalArrangement = Arrangement.Top,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text("היי עוזר", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color(0xFF54E0C1))
@@ -204,6 +198,7 @@ class MainActivity : ComponentActivity() {
                                 if (Build.VERSION.SDK_INT >= 31) permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
                                 val missing = permissions.filter { ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED }
                                 if (missing.isNotEmpty()) {
+                                    pendingActivation = true
                                     permissionLauncher.launch(missing.toTypedArray())
                                 } else {
                                     val currentPrefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
@@ -213,7 +208,7 @@ class MainActivity : ComponentActivity() {
                                             val stopIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply { action = VoiceAssistantService.ACTION_STOP }
                                             startService(stopIntent)
                                         }
-                                        enabled = false
+                                        autoStartEnabled = false
                                         serviceActive = false
                                     } else {
                                         currentPrefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
@@ -222,7 +217,7 @@ class MainActivity : ComponentActivity() {
                                             putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
                                         }
                                         ContextCompat.startForegroundService(this@MainActivity, startIntent)
-                                        enabled = true
+                                        autoStartEnabled = true
                                         serviceActive = true
                                     }
                                 }
