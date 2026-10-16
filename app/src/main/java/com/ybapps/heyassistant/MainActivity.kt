@@ -1,7 +1,12 @@
 package com.ybapps.heyassistant
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothProfile
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -37,25 +42,124 @@ import androidx.core.content.ContextCompat
 class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
-    private var refreshStatus by mutableStateOf(0)
+    ) { refreshHeadphoneStatus() }
+
+    private var headphonesConnected by mutableStateOf(false)
+    private var serviceActive by mutableStateOf(false)
+    private var receiverRegistered = false
+
+    private val headphoneReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_HEADSET_PLUG -> {
+                    headphonesConnected = intent.getIntExtra("state", 0) == 1
+                    saveHeadphoneState(headphonesConnected)
+                }
+                "android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED",
+                "android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED",
+                "android.bluetooth.action.LE_AUDIO_CONNECTION_STATE_CHANGED" -> {
+                    if (Build.VERSION.SDK_INT < 31 ||
+                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+                        val state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED)
+                        if (state == BluetoothProfile.STATE_CONNECTED) headphonesConnected = true
+                        else if (state == BluetoothProfile.STATE_DISCONNECTED) refreshHeadphoneStatus()
+                        saveHeadphoneState(headphonesConnected)
+                    }
+                }
+            }
+        }
+    }
 
     override fun onResume() {
         super.onResume()
-        refreshStatus++
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_HEADSET_PLUG)
+            addAction("android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED")
+            addAction("android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED")
+            addAction("android.bluetooth.action.LE_AUDIO_CONNECTION_STATE_CHANGED")
+        }
+        if (!receiverRegistered) {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(headphoneReceiver, filter, Context.RECEIVER_EXPORTED)
+            else @Suppress("DEPRECATION") registerReceiver(headphoneReceiver, filter)
+            receiverRegistered = true
+        }
+        val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_HEADSET_PLUG))
+        if (sticky != null) headphonesConnected = sticky.getIntExtra("state", 0) == 1
+        serviceActive = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE).getBoolean("service_active", false)
+        saveHeadphoneState(headphonesConnected)
+        refreshHeadphoneStatus()
+    }
+
+    override fun onPause() {
+        if (receiverRegistered) {
+            try { unregisterReceiver(headphoneReceiver) } catch (_: Exception) { }
+            receiverRegistered = false
+        }
+        super.onPause()
+    }
+
+    private fun saveHeadphoneState(connected: Boolean) {
+        getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+            .edit().putBoolean("headphones_connected", connected).apply()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun refreshHeadphoneStatus() {
+        val wiredSticky = registerReceiver(null, IntentFilter(Intent.ACTION_HEADSET_PLUG))
+        val wiredConnected = wiredSticky?.getIntExtra("state", 0) == 1
+        if (wiredConnected) {
+            headphonesConnected = true
+            saveHeadphoneState(true)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 31 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            headphonesConnected = false
+            saveHeadphoneState(false)
+            return
+        }
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null || !adapter.isEnabled) {
+            headphonesConnected = false
+            saveHeadphoneState(false)
+            return
+        }
+        var checkedProfiles = 0
+        var anyConnected = false
+        val callback = object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                try {
+                    if (proxy.connectedDevices.isNotEmpty()) anyConnected = true
+                } catch (_: SecurityException) { }
+                checkedProfiles++
+                if (checkedProfiles >= 2) {
+                    headphonesConnected = anyConnected
+                    saveHeadphoneState(anyConnected)
+                }
+                try { adapter.closeProfileProxy(profile, proxy) } catch (_: Exception) { }
+            }
+            override fun onServiceDisconnected(profile: Int) { }
+        }
+        try {
+            adapter.getProfileProxy(this, callback, BluetoothProfile.A2DP)
+            adapter.getProfileProxy(this, callback, BluetoothProfile.HEADSET)
+        } catch (_: SecurityException) {
+            headphonesConnected = false
+            saveHeadphoneState(false)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val prefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+        headphonesConnected = prefs.getBoolean("headphones_connected", false)
+        serviceActive = prefs.getBoolean("service_active", false)
         setContent {
-            val refresh = refreshStatus
-            var enabled by remember { mutableStateOf(
-                getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
-                    .getBoolean(VoiceAssistantService.KEY_AUTO_START, false)
-            ) }
-            val prefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
-            val headphonesConnected = prefs.getBoolean("headphones_connected", false)
-            val serviceActive = prefs.getBoolean("service_active", false)
+            var enabled by remember {
+                mutableStateOf(prefs.getBoolean(VoiceAssistantService.KEY_AUTO_START, false))
+            }
+            val connected = headphonesConnected
+            val active = serviceActive
             MaterialTheme(colorScheme = darkColorScheme(
                 primary = Color(0xFF54E0C1),
                 background = Color(0xFF0A0E13),
@@ -74,9 +178,9 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth().background(Color(0xFF151D26), RoundedCornerShape(24.dp)).padding(18.dp),
                             horizontalAlignment = Alignment.Start
                         ) {
-                            Text(if (headphonesConnected) "● אוזניות מחוברות" else "● אוזניות לא מחוברות", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (headphonesConnected) Color(0xFF54E0C1) else Color(0xFFFF7B86))
+                            Text(if (connected) "● אוזניות מחוברות" else "● אוזניות לא מחוברות", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (connected) Color(0xFF54E0C1) else Color(0xFFFF7B86))
                             Spacer(Modifier.height(8.dp))
-                            Text(if (serviceActive) "סטטוס העוזר: פעיל ומאזין" else "סטטוס העוזר: לא פעיל", fontSize = 15.sp, color = if (serviceActive) Color(0xFF54E0C1) else Color(0xFFB9C7D6))
+                            Text(if (active) "סטטוס העוזר: פעיל ומאזין" else "סטטוס העוזר: לא פעיל", fontSize = 15.sp, color = if (active) Color(0xFF54E0C1) else Color(0xFFB9C7D6))
                             Spacer(Modifier.height(12.dp))
                             Text(if (enabled) "ההפעלה האוטומטית מופעלת" else "העוזר מוכן", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(6.dp))
@@ -110,6 +214,7 @@ class MainActivity : ComponentActivity() {
                                             startService(stopIntent)
                                         }
                                         enabled = false
+                                        serviceActive = false
                                     } else {
                                         currentPrefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
                                         val startIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply {
@@ -118,12 +223,13 @@ class MainActivity : ComponentActivity() {
                                         }
                                         ContextCompat.startForegroundService(this@MainActivity, startIntent)
                                         enabled = true
+                                        serviceActive = true
                                     }
                                 }
                             }) { Text(if (enabled) "כבה את העוזר" else "הפעל האזנה רציפה") }
                         }
                         Spacer(Modifier.height(12.dp))
-                        Text("מצב החיבור מתעדכן כשאירוע חיבור או ניתוק מתקבל. יש לבדוק את ההתנהגות בפועל במכשיר.", color = Color(0xFF718096), fontSize = 12.sp)
+                        Text("מצב האוזניות נבדק בפתיחת האפליקציה ומתעדכן באירועי חיבור וניתוק.", color = Color(0xFF718096), fontSize = 12.sp)
                     }
                 }
             }
