@@ -122,9 +122,16 @@ class VoiceAssistantService : Service() {
                     // Do not start a second recognition session while this result is being handled.
                     if (!serviceStopping) {
                         handler.postDelayed({
-                            processingCommand = false
-                            if (!serviceStopping) startRecognitionSession()
-                        }, 5000)
+                            if (!serviceStopping) {
+                                // Recreate the recognizer after each completed command so the
+                                // previous capture session is released before listening again.
+                                createRecognizer()
+                                processingCommand = false
+                                scheduleRestart(500)
+                            } else {
+                                processingCommand = false
+                            }
+                        }, 1200)
                     } else {
                         processingCommand = false
                     }
