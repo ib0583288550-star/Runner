@@ -124,7 +124,7 @@ class VoiceAssistantService : Service() {
                         handler.postDelayed({
                             processingCommand = false
                             if (!serviceStopping) startRecognitionSession()
-                        }, 1200)
+                        }, 5000)
                     } else {
                         processingCommand = false
                     }
