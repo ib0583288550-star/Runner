@@ -53,14 +53,18 @@ class MainActivity : ComponentActivity() {
             val prefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
             prefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
             autoStartEnabled = true
-            val startIntent = Intent(this, VoiceAssistantService::class.java).apply {
-                action = VoiceAssistantService.ACTION_START
-                putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
-            }
-            try {
-                ContextCompat.startForegroundService(this, startIntent)
-                serviceActive = true
-            } catch (_: Exception) {
+            if (headphonesConnected) {
+                val startIntent = Intent(this, VoiceAssistantService::class.java).apply {
+                    action = VoiceAssistantService.ACTION_START
+                    putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
+                }
+                try {
+                    ContextCompat.startForegroundService(this, startIntent)
+                    serviceActive = true
+                } catch (_: Exception) {
+                    serviceActive = false
+                }
+            } else {
                 serviceActive = false
             }
         }
@@ -108,7 +112,9 @@ class MainActivity : ComponentActivity() {
         }
         val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_HEADSET_PLUG))
         if (sticky != null) headphonesConnected = sticky.getIntExtra("state", 0) == 1
-        serviceActive = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE).getBoolean("service_active", false)
+        val currentPrefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+        serviceActive = currentPrefs.getBoolean("service_active", false)
+        autoStartEnabled = currentPrefs.getBoolean(VoiceAssistantService.KEY_AUTO_START, false)
         saveHeadphoneState(headphonesConnected)
         refreshHeadphoneStatus()
     }
@@ -193,32 +199,40 @@ class MainActivity : ComponentActivity() {
                             Text("חבר אוזניות והפעל את ההאזנה. אפשר לומר את הפקודות באנגלית; לזיהוי בעברית נדרשת תמיכה של שירות הזיהוי במכשיר.", color = Color(0xFF8D9BAA), fontSize = 13.sp)
                             Spacer(Modifier.height(16.dp))
                             Button(modifier = Modifier.fillMaxWidth(), onClick = {
-                                val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
-                                if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                if (Build.VERSION.SDK_INT >= 31) permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-                                val missing = permissions.filter { ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED }
-                                if (missing.isNotEmpty()) {
-                                    pendingActivation = true
-                                    permissionLauncher.launch(missing.toTypedArray())
+                                val currentPrefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
+                                if (enabled) {
+                                    currentPrefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, false).apply()
+                                    if (currentPrefs.getBoolean("service_active", false)) {
+                                        val stopIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply { action = VoiceAssistantService.ACTION_STOP }
+                                        try { startService(stopIntent) } catch (_: Exception) { }
+                                    }
+                                    autoStartEnabled = false
+                                    serviceActive = false
                                 } else {
-                                    val currentPrefs = getSharedPreferences(VoiceAssistantService.PREFS, MODE_PRIVATE)
-                                    if (enabled) {
-                                        currentPrefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, false).apply()
-                                        if (currentPrefs.getBoolean("service_active", false)) {
-                                            val stopIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply { action = VoiceAssistantService.ACTION_STOP }
-                                            startService(stopIntent)
-                                        }
-                                        autoStartEnabled = false
-                                        serviceActive = false
+                                    val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                                    if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    if (Build.VERSION.SDK_INT >= 31) permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+                                    val missing = permissions.filter { ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED }
+                                    if (missing.isNotEmpty()) {
+                                        pendingActivation = true
+                                        permissionLauncher.launch(missing.toTypedArray())
                                     } else {
                                         currentPrefs.edit().putBoolean(VoiceAssistantService.KEY_AUTO_START, true).apply()
-                                        val startIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply {
-                                            action = VoiceAssistantService.ACTION_START
-                                            putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
-                                        }
-                                        ContextCompat.startForegroundService(this@MainActivity, startIntent)
                                         autoStartEnabled = true
-                                        serviceActive = true
+                                        if (headphonesConnected) {
+                                            val startIntent = Intent(this@MainActivity, VoiceAssistantService::class.java).apply {
+                                                action = VoiceAssistantService.ACTION_START
+                                                putExtra(VoiceAssistantService.EXTRA_LANGUAGE, "en-US")
+                                            }
+                                            try {
+                                                ContextCompat.startForegroundService(this@MainActivity, startIntent)
+                                                serviceActive = true
+                                            } catch (_: Exception) {
+                                                serviceActive = false
+                                            }
+                                        } else {
+                                            serviceActive = false
+                                        }
                                     }
                                 }
                             }) { Text(if (enabled) "כבה את העוזר" else "הפעל האזנה רציפה") }
