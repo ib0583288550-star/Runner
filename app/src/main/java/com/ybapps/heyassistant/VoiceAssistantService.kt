@@ -129,7 +129,6 @@ class VoiceAssistantService : Service() {
             audio.mode = AudioManager.MODE_IN_COMMUNICATION
             routeReadyDelayMs = 1200L
             selectedCommunicationDeviceId = null
-            routeWaitAttempts = 0
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val bluetoothDevice = audio.availableCommunicationDevices.firstOrNull {
                     it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
