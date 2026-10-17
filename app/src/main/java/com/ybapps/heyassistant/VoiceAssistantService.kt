@@ -12,6 +12,8 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import org.json.JSONObject
 import org.vosk.Model
@@ -234,6 +236,10 @@ class VoiceAssistantService : Service() {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putBoolean(KEY_AUTO_START, false).putBoolean("service_active", false).apply()
             setStatus("Assistant stopped")
+            Handler(Looper.getMainLooper()).post {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
             return
         }
         when {
