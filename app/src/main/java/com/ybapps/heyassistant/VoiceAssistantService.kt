@@ -27,6 +27,9 @@ class VoiceAssistantService : Service() {
     private var legacyScoStarted = false
     private var routeReadyDelayMs = 1200L
     private var selectedCommunicationDeviceId: Int? = null
+    // Bluetooth SCO / speech recognition can pause media players when the audio route changes.
+    // Remember whether music was playing before switching to the headset microphone.
+    private var resumeMusicAfterNextListen = false
     private val handler = Handler(Looper.getMainLooper())
     private val restartTask = Runnable { startRecognitionSession() }
 
@@ -71,6 +74,8 @@ class VoiceAssistantService : Service() {
             return
         }
         serviceStopping = false
+        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        resumeMusicAfterNextListen = audioManager.isMusicActive
         if (!prepareBluetoothMicrophone()) {
             updateNotification("Bluetooth microphone unavailable. Waiting for a headset connection.")
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("service_active", false).apply()
@@ -201,6 +206,12 @@ class VoiceAssistantService : Service() {
         if (serviceStopping) return
         val r = recognizer ?: return
         try {
+            val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+            // The route switch above may already have paused the player, so retain that
+            // initial state for the first recognition session. For later sessions, inspect
+            // the live state before starting the recognizer.
+            val shouldRestoreMusic = resumeMusicAfterNextListen || audioManager.isMusicActive
+            resumeMusicAfterNextListen = false
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
@@ -214,6 +225,15 @@ class VoiceAssistantService : Service() {
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30000L)
             }
             r.startListening(intent)
+            if (shouldRestoreMusic) {
+                // Some recognition providers take audio focus and pause media. Restore explicit
+                // PLAY (not PLAY_PAUSE) only if playback was active before this listen session.
+                handler.postDelayed({
+                    if (!serviceStopping && !processingCommand && !audioManager.isMusicActive) {
+                        sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                    }
+                }, 700)
+            }
         } catch (_: Exception) {
             if (!serviceStopping) {
                 handler.postDelayed({
