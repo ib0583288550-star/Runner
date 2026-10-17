@@ -40,14 +40,14 @@ class VoiceAssistantService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val action = intent?.action
+        when (action) {
             ACTION_STOP, ACTION_HEADPHONES_DISCONNECTED -> {
                 stopping = true
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                val preferences = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putBoolean("service_active", false)
-                    .apply {
-                        if (intent.action == ACTION_STOP) putBoolean(KEY_AUTO_START, false)
-                    }.apply()
+                if (action == ACTION_STOP) preferences.putBoolean(KEY_AUTO_START, false)
+                preferences.apply()
                 stopCapture()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -204,9 +204,9 @@ class VoiceAssistantService : Service() {
                 legacyScoStarted = true
             }
             var input: AudioDeviceInfo? = null
-            repeat(12) {
+            for (attempt in 0 until 12) {
                 input = findBluetoothInput()
-                if (input != null || stopping) return@repeat
+                if (input != null || stopping) break
                 Thread.sleep(250)
             }
             return input != null
