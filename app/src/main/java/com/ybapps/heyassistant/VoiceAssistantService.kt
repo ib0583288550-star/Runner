@@ -159,9 +159,8 @@ class VoiceAssistantService : Service() {
                 if (safeName.startsWith("/") || safeName.split('/').any { it == ".." }) {
                     throw IllegalStateException("Invalid model archive path")
                 }
-                val relative = safeName.substringAfter('/', "")
-                if (relative.isNotEmpty()) {
-                    val out = File(tempRoot, relative)
+                if (safeName.isNotEmpty()) {
+                    val out = File(tempRoot, safeName)
                     if (entry.isDirectory) out.mkdirs() else {
                         out.parentFile?.mkdirs()
                         FileOutputStream(out).use { output -> zip.copyTo(output) }
