@@ -170,9 +170,13 @@ class VoiceAssistantService : Service() {
         try {
             audio.mode = AudioManager.MODE_IN_COMMUNICATION
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val device = audio.availableCommunicationDevices.firstOrNull {
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                        it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                // Prefer Bluetooth LE Audio when Android exposes it; classic SCO can force
+                // many headsets into narrow-band call audio and degrade music.
+                val devices = audio.availableCommunicationDevices
+                val device = devices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                } ?: devices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
                 } ?: return false
                 if (!audio.setCommunicationDevice(device)) return false
                 selectedCommunicationDeviceId = device.id
@@ -203,9 +207,13 @@ class VoiceAssistantService : Service() {
     private fun findBluetoothInput(): AudioDeviceInfo? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-        return audio.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+        val inputs = audio.getDevices(AudioManager.GET_DEVICES_INPUTS)
+        // Prefer LE Audio input over classic SCO when supported.
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            inputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLE_HEADSET }
+                ?: inputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+        } else {
+            inputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
         }
     }
 
