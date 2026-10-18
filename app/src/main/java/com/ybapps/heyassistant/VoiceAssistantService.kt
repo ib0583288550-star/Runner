@@ -18,11 +18,8 @@ import android.view.KeyEvent
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
-import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.net.URL
-import java.util.zip.ZipInputStream
 import kotlin.concurrent.thread
 
 class VoiceAssistantService : Service() {
@@ -74,8 +71,8 @@ class VoiceAssistantService : Service() {
             setStatus("Preparing English voice recognition")
             val modelDir = File(filesDir, MODEL_DIR)
             if (!File(modelDir, "am").exists()) {
-                setStatus("Downloading English voice model (first run only)")
-                downloadAndExtractModel(modelDir)
+                setStatus("Installing bundled English voice model")
+                copyBundledModel(MODEL_DIR, modelDir)
             }
             if (stopping) return
             model = Model(modelDir.absolutePath)
@@ -138,48 +135,34 @@ class VoiceAssistantService : Service() {
         }
     }
 
-    private fun downloadAndExtractModel(target: File) {
-        val zipFile = File(cacheDir, "vosk-en-model.zip")
-        URL(MODEL_URL).openConnection().apply {
-            connectTimeout = 20000
-            readTimeout = 60000
-            getInputStream().use { input ->
-                FileOutputStream(zipFile).use { output -> input.copyTo(output) }
-            }
-        }
-        val tempRoot = File(filesDir, "vosk-unpack").apply {
-            deleteRecursively()
-            mkdirs()
-        }
-        ZipInputStream(BufferedInputStream(zipFile.inputStream())).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                if (stopping) throw InterruptedException("Stopped")
-                val safeName = entry.name.replace('\\', '/')
-                if (safeName.startsWith("/") || safeName.split('/').any { it == ".." }) {
-                    throw IllegalStateException("Invalid model archive path")
-                }
-                if (safeName.isNotEmpty()) {
-                    val out = File(tempRoot, safeName)
-                    if (entry.isDirectory) out.mkdirs() else {
-                        out.parentFile?.mkdirs()
-                        FileOutputStream(out).use { output -> zip.copyTo(output) }
-                    }
-                }
-                zip.closeEntry()
-                entry = zip.nextEntry
-            }
-        }
-        val extractedModel = File(tempRoot, MODEL_DIR)
-        if (!File(extractedModel, "am").exists()) {
-            throw IllegalStateException("Downloaded English model is incomplete")
-        }
+    private fun copyBundledModel(assetPath: String, target: File) {
+        if (stopping) throw InterruptedException("Stopped")
         target.deleteRecursively()
-        if (!extractedModel.renameTo(target)) {
-            extractedModel.copyRecursively(target, overwrite = true)
+        target.mkdirs()
+        val children = assets.list(assetPath) ?: emptyArray()
+        if (children.isEmpty()) {
+            assets.open(assetPath).use { input ->
+                FileOutputStream(target).use { output -> input.copyTo(output) }
+            }
+            return
         }
-        tempRoot.deleteRecursively()
-        zipFile.delete()
+        for (child in children) {
+            if (stopping) throw InterruptedException("Stopped")
+            val childAssetPath = "$assetPath/$child"
+            val childTarget = File(target, child)
+            val nested = assets.list(childAssetPath) ?: emptyArray()
+            if (nested.isNotEmpty()) {
+                copyBundledModel(childAssetPath, childTarget)
+            } else {
+                childTarget.parentFile?.mkdirs()
+                assets.open(childAssetPath).use { input ->
+                    FileOutputStream(childTarget).use { output -> input.copyTo(output) }
+                }
+            }
+        }
+        if (!File(target, "am").exists()) {
+            throw IllegalStateException("Bundled English voice model is missing or incomplete")
+        }
     }
 
     private fun prepareBluetoothMicrophone(): Boolean {
@@ -335,6 +318,5 @@ class VoiceAssistantService : Service() {
         private const val NOTIFICATION_ID = 41
         private const val SAMPLE_RATE = 16000
         private const val MODEL_DIR = "vosk-model-small-en-us-0.15"
-        private const val MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
-    }
+            }
 }
